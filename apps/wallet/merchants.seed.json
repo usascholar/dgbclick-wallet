@@ -1,0 +1,18 @@
+[
+  {
+    "id": "blockindexai",
+    "name": "BlockIndex.AI",
+    "url": "https://blockindex.ai/",
+    "category": "Crypto Analytics",
+    "blurb": "Decentralization-metrics rankings (D-Score), AI tools, and courses with DigiDollar guides. Memberships payable in DD + DGB.",
+    "addedAt": "2026-07-28"
+  },
+  {
+    "id": "revgenetics",
+    "name": "RevGenetics",
+    "url": "https://www.revgenetics.com/",
+    "category": "Health Supplements",
+    "blurb": "Clinical-grade longevity supplements: NMN, NAD+, curcumin, resveratrol, senolytics. DD accepted at exact USD parity, no fees.",
+    "addedAt": "2026-07-28"
+  }
+]

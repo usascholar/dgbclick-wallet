@@ -1,0 +1,242 @@
+// Drive the wallet UI in headless Chrome over CDP: create → lock → unlock → restore.
+// Evidence: assertions on the live DOM + PNG screenshots (written to cwd).
+// Needs no deps (Node ≥22 built-in WebSocket). Setup:
+//   PORT=8791 node apps/wallet/server.js &
+//   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+//     --remote-debugging-port=9224 --user-data-dir=$(mktemp -d) --no-first-run about:blank &
+//   node apps/wallet/scripts/verify-ui.mjs          # exit 0 = all checks green
+// A fresh user-data-dir gives a fresh IndexedDB ("no wallet" state) — required.
+import { writeFileSync } from 'node:fs';
+
+const CDP_PORT = Number(process.env.CDP_PORT) || 9224;
+const APP = process.env.APP_URL || 'http://127.0.0.1:8791';
+const OUT = './';
+
+const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`)).json();
+const ws = new WebSocket(webSocketDebuggerUrl);
+await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+
+let msgId = 0;
+const pending = new Map();
+ws.onmessage = (ev) => {
+  const m = JSON.parse(ev.data);
+  if (m.id && pending.has(m.id)) {
+    const { resolve, reject } = pending.get(m.id);
+    pending.delete(m.id);
+    m.error ? reject(new Error(m.error.message)) : resolve(m.result);
+  }
+};
+function cdp(method, params = {}, sessionId) {
+  const id = ++msgId;
+  ws.send(JSON.stringify({ id, method, params, sessionId }));
+  return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+}
+
+const { targetId } = await cdp('Target.createTarget', { url: 'about:blank' });
+const { sessionId } = await cdp('Target.attachToTarget', { targetId, flatten: true });
+await cdp('Page.enable', {}, sessionId);
+await cdp('Runtime.enable', {}, sessionId);
+
+async function evaluate(expression) {
+  const { result, exceptionDetails } = await cdp('Runtime.evaluate', {
+    expression, awaitPromise: true, returnByValue: true,
+  }, sessionId);
+  if (exceptionDetails) throw new Error('page threw: ' + JSON.stringify(exceptionDetails.exception?.description || exceptionDetails.text));
+  return result.value;
+}
+
+// Poll until an expression is truthy (UI state transitions are async).
+async function waitFor(expr, label, timeoutMs = 15000) {
+  const t0 = Date.now();
+  const guarded = `(() => { try { return !!(${expr}); } catch { return false; } })()`;
+  while (Date.now() - t0 < timeoutMs) {
+    if (await evaluate(guarded)) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`timeout waiting for: ${label}`);
+}
+
+async function shot(name) {
+  const { data } = await cdp('Page.captureScreenshot', { format: 'png' }, sessionId);
+  writeFileSync(OUT + name, Buffer.from(data, 'base64'));
+  console.log('  [screenshot]', name);
+}
+
+const visible = (id) => `document.getElementById('${id}').style.display !== 'none'`;
+const text = (id) => `document.getElementById('${id}').textContent`;
+const click = (id) => evaluate(`document.getElementById('${id}').click()`);
+const setVal = (id, v) => evaluate(
+  `{ const el = document.getElementById('${id}'); el.value = ${JSON.stringify(v)}; el.dispatchEvent(new Event('input', {bubbles:true})); }`);
+
+let step = 0;
+function check(cond, what) {
+  step++;
+  console.log(`${cond ? '✅' : '❌'} ${step}. ${what}`);
+  if (!cond) process.exitCode = 1;
+}
+
+// -- 1. fresh profile → "no wallet" state + banner
+await cdp('Page.navigate', { url: APP }, sessionId);
+await waitFor(visible('w-none'), 'no-wallet state');
+check(true, 'fresh profile boots into "no wallet" state');
+// the banner is runtime-rendered from the node's chain (#61); mock chain = 'test'
+await waitFor(`${text('net-banner')}.includes('TESTNET ONLY') && !document.getElementById('net-banner').hidden`, 'runtime TESTNET banner');
+check(true, 'TESTNET ONLY banner rendered from the node chain (mock=test)');
+await shot('01-no-wallet.png');
+
+// -- probe: mismatched passwords rejected
+await setVal('w-create-pass', 'correct horse battery');
+await setVal('w-create-pass2', 'different');
+await click('w-create');
+await waitFor(`${text('w-none-err')}.length > 0`, 'mismatch error');
+check((await evaluate(text('w-none-err'))).includes('match'), 'PROBE: mismatched passwords → inline error: ' + await evaluate(text('w-none-err')));
+
+// -- 2. create wallet
+await setVal('w-create-pass2', 'correct horse battery');
+await click('w-create');
+await waitFor(visible('w-open'), 'unlocked state after create');
+// the backup ceremony overlays the already-open wallet (spec §2); skipping via
+// "Remind me later" (id w-backup-done kept stable) leaves the badge nagging
+await waitFor(visible('w-backup-view'), 'backup ceremony overlays the open wallet');
+await click('w-backup-done');
+await waitFor(`!document.getElementById('w-connect-modal').classList.contains('open')`, 'ceremony dismissed');
+check(await evaluate(visible('w-backup-badge')), '"Not backed up" badge shown after skipping the backup ceremony');
+const addr0 = await evaluate(text('w-address'));
+const path0 = await evaluate(text('w-path'));
+check(/^dgbt1p[a-z0-9]{50,}$/.test(addr0), `create → client-side receive address shown: ${addr0} (${path0})`);
+check(path0 === "m/86'/1'/0'/0/0", 'path is BIP86 testnet account 0 index 0');
+// #72: the receive screen also shows the DigiDollar base58check form (TD… on
+// testnet) — the ONLY encoding Core/mobile wallets accept as a DD recipient.
+const ddAddr0 = await evaluate(text('w-dd-address'));
+check(/^TD[1-9A-HJ-NP-Za-km-z]{40,}$/.test(ddAddr0), `create → DigiDollar (TD…) address shown for interop: ${ddAddr0}`);
+await shot('02-created-unlocked.png');
+
+// -- 2b. #68 DGB send accepts legacy base58 recipients, with network gating.
+// Mock node chain = 'test' → netName 'testnet'. We probe the address-validation
+// branch of w-send-review; the mock wallet has no funds, so an ACCEPTED address
+// falls through to a funds/indexer error — anything that is NOT an address error
+// proves the base58 recipient was decoded and network-checked.
+async function sendReviewError(addr, amount = '1') {
+  await setVal('w-send-to', addr);
+  await setVal('w-send-amount', amount);
+  await evaluate(`document.getElementById('w-send-err').textContent = ''`);
+  await click('w-send-review');
+  await waitFor(`${text('w-send-err')}.length > 0`, `send error for ${addr.slice(0, 8)}…`);
+  return evaluate(text('w-send-err'));
+}
+await click('act-send');
+await waitFor(`document.getElementById('send-modal').classList.contains('open')`, 'send modal open');
+const errGarbage = await sendReviewError('not-an-address');
+check(/invalid address/.test(errGarbage), `PROBE: garbage recipient → "${errGarbage}"`);
+const errMainnet = await sendReviewError('DDBUdbqZjUgVKkQX5ju6KmrUKZZzPu2aZc'); // real mainnet P2PKH
+check(/not for this network/.test(errMainnet), `PROBE: mainnet base58 on testnet → "${errMainnet}"`);
+const errTestnet = await sendReviewError('sqdPA2TDtoAbqMnqS1sgsoyzjzJYa7eDck'); // testnet P2PKH
+check(!/invalid address|not for this network/.test(errTestnet),
+  `legacy testnet base58 recipient ACCEPTED (past validation → "${errTestnet}")`);
+// -- 2c. #71 BIP21 send: pasting a digibyte: URI unpacks address + amount + label.
+// setVal dispatches 'input', which fires absorbSendUri; it rewrites the field to
+// the bare address, prefills the amount, and surfaces label/message as context.
+await setVal('w-send-amount', ''); // clear so the URI amount is the one that lands
+await setVal('w-send-to', 'digibyte:sqdPA2TDtoAbqMnqS1sgsoyzjzJYa7eDck?amount=2.5&label=Coffee%20fund');
+const uriAddr = await evaluate(`document.getElementById('w-send-to').value`);
+const uriAmt = await evaluate(`document.getElementById('w-send-amount').value`);
+const uriCtx = await evaluate(text('w-send-uri-ctx'));
+check(uriAddr === 'sqdPA2TDtoAbqMnqS1sgsoyzjzJYa7eDck', `PROBE: pasted BIP21 URI → bare address extracted: ${uriAddr}`);
+check(uriAmt === '2.5', `PROBE: BIP21 amount prefilled the amount field: ${uriAmt}`);
+check(/Coffee fund/.test(uriCtx) && await evaluate(visible('w-send-uri-ctx')), `PROBE: BIP21 label surfaced as context: "${uriCtx}"`);
+await evaluate(`document.getElementById('send-modal').classList.remove('open')`); // close, back to wallet
+
+// -- 2d. #71 BIP21 receive: requesting an amount switches the QR to a URI and
+// reveals the "Copy payment request" button; clearing it reverts to bare address.
+await click('act-receive');
+await waitFor(`document.getElementById('receive-modal').classList.contains('open')`, 'receive modal open');
+// backup interception (spec §3): an un-backed-up wallet warns before showing
+// the address, every open until the quiz passes; Continue anyway is one open
+check(await evaluate(visible('w-receive-guard')) && !(await evaluate(visible('w-receive-body'))),
+  'receive intercepted: back-up warning shown before the address (not backed up)');
+await click('w-receive-anyway');
+await waitFor(visible('w-receive-body'), 'receive view after "Continue anyway"');
+await setVal('w-req-amount', '12.5');
+check(await evaluate(visible('w-copy-uri')), 'requesting an amount reveals the "Copy payment request" (URI) button');
+await setVal('w-req-amount', '');
+check(!(await evaluate(visible('w-copy-uri'))), 'clearing the amount reverts to bare-address QR (URI button hidden)');
+await evaluate(`document.getElementById('receive-modal').classList.remove('open')`);
+
+// -- 3. seed reveal: re-auth gated (spec §5), blurred decoys until tapped
+await click('w-backup');
+await waitFor(`document.getElementById('reauth-modal').classList.contains('open')`, 're-auth prompt');
+await setVal('reauth-pass', 'correct horse battery');
+await click('reauth-go');
+await waitFor(visible('w-seed'), 'seed view after re-auth');
+check(await evaluate(`document.getElementById('w-seed-reveal').classList.contains('blurred')`),
+  'seed grid stays blurred (decoy words) until tapped');
+await click('w-seed-show');
+// after the tap, w-seed-words holds the REAL words (numbers are CSS counters)
+const seed = (await evaluate(text('w-seed-words'))).trim().split(/\s+/).join(' ');
+check(seed.split(' ').length === 12, 'seed backup reveals a 12-word phrase');
+await shot('03-seed-backup.png');
+await click('w-backup');
+check((await evaluate(text('w-seed-words'))) === '', 'hide seed clears it from the DOM');
+
+// -- 4. next address
+await click('w-next');
+const addr1 = await evaluate(text('w-address'));
+check(addr1 !== addr0 && (await evaluate(text('w-path'))) === "m/86'/1'/0'/0/1", `next address differs: ${addr1}`);
+
+// -- 5. lock
+await click('w-lock');
+await waitFor(visible('w-locked'), 'locked state');
+check(true, 'lock → locked state, mnemonic dropped from memory');
+await shot('04-locked.png');
+
+// -- probe: wrong password
+await setVal('w-unlock-pass', 'not the password');
+await click('w-unlock');
+await waitFor(`${text('w-locked-err')}.length > 0`, 'wrong-pass error');
+check((await evaluate(text('w-locked-err'))) === 'wrong password', 'PROBE: wrong password → "wrong password", stays locked');
+
+// -- 6. unlock with the right password
+await setVal('w-unlock-pass', 'correct horse battery');
+await click('w-unlock');
+await waitFor(visible('w-open'), 'unlocked after unlock');
+// #112 changed the right answer here: unlock reopens on the last HANDED-OUT
+// index (step 4 clicked "Next address"), because an address someone may have
+// been given has to stay watched and shown. Determinism is still what this
+// check is for — the same seed must re-derive the same address, not a new one.
+check((await evaluate(text('w-address'))) === addr1
+  && (await evaluate(text('w-path'))) === "m/86'/1'/0'/0/1",
+  'unlock → the handed-out address (index 1) re-derived, not a fresh index 0');
+
+// -- 7. reload: wallet persists (IndexedDB), comes back locked
+await cdp('Page.navigate', { url: APP }, sessionId);
+await waitFor(visible('w-locked'), 'locked after reload');
+check(true, 'page reload → wallet persisted, locked (keys not kept)');
+
+// -- 8. erase (type-ERASE ceremony, spec §5) + restore from seed round-trip
+await evaluate(`{ const l = document.getElementById('w-forget'); l.click(); }`);
+await waitFor(visible('w-erase-view'), 'erase ceremony shown');
+check(await evaluate(`document.getElementById('w-erase-go').disabled`),
+  'erase ceremony: the button arms only on a typed ERASE');
+await setVal('w-erase-input', 'ERASE');
+await click('w-erase-go');
+await waitFor(visible('w-none'), 'no-wallet after erase');
+await click('w-show-restore');
+
+// probe: junk seed rejected
+await setVal('w-restore-seed', 'foo bar baz');
+await setVal('w-create-pass', 'brand new password');
+await setVal('w-create-pass2', 'brand new password');
+await click('w-restore-go');
+await waitFor(`${text('w-none-err')}.length > 0`, 'invalid seed error');
+check((await evaluate(text('w-none-err'))).includes('valid BIP39'), 'PROBE: junk seed phrase → validation error: ' + await evaluate(text('w-none-err')));
+
+await setVal('w-restore-seed', '  ' + seed.toUpperCase() + '  '); // sloppy paste: case + whitespace
+await click('w-restore-go');
+await waitFor(visible('w-open'), 'unlocked after restore');
+check((await evaluate(text('w-address'))) === addr0, 'restore from seed (sloppy paste) → identical address 0: round-trip proven');
+// typing the words proves possession (spec §2): no ceremony, no badge
+check(!(await evaluate(visible('w-backup-badge'))), 'restore-from-seed marks the wallet backed up — no badge');
+await shot('05-restored.png');
+
+console.log('\nDone.');
+ws.close();

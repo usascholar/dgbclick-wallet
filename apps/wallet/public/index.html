@@ -1,0 +1,1470 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DGBclick Wallet · DigiDollar wallet</title>
+  <link rel="icon" type="image/png" href="/helmet.png" />
+  <style>
+    /* Design tokens — Stakinator UI kit (Figma master file, Colors pages) */
+    :root {
+      --gray-50:#fcfcfd; --gray-100:#f1f3f6; --gray-200:#e0e4ea; --gray-300:#c8ced9;
+      --gray-400:#a8b3c4; --gray-500:#8292aa; --gray-600:#5b6b86; --gray-700:#384252;
+      --gray-800:#242b35; --gray-900:#191d24; --gray-950:#15181e;
+      --primary-100:#fdf0f4; --primary-300:#f7c5d1; --primary-600:#e74c73;
+      --primary-700:#d71d4c; --primary-800:#79102b;
+      --bg:var(--gray-100); --card:#ffffff; --border:var(--gray-200);
+      --text:var(--gray-950); --muted:var(--gray-600);
+      --good:#12a150; --good-bg:#e8f7ee; --bad:var(--primary-700); --bad-bg:var(--primary-100);
+      --warn:#9a6700; --warn-bg:#fff3d1;
+      --accent:#0b92f9; --accent-2:#44abfa; --accent-3:#a0d4fd; --accent-4:#c2e4fd; --accent-5:#ddf0fe;
+      --radius:16px; --radius-s:8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font: 400 14px/1.55 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh; min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* a modal owns the scroll while open — the page behind must not move */
+    body:has(.modal-backdrop.open) { overflow: hidden; }
+    /* v3: narrow single column like a phone-first crypto wallet */
+    header { padding: 22px 20px 4px; max-width: 520px; margin: 0 auto; }
+    .badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 999px; vertical-align: middle; letter-spacing: .02em; }
+    .badge.mock { background: var(--warn-bg); color: var(--warn); }
+    .badge.real { background: var(--good-bg); color: var(--good); }
+    main { max-width: 520px; margin: 0 auto; padding: 12px 20px 60px; display: grid; gap: 14px; }
+    /* every layer of the nested grid stack must be allowed to shrink below
+       min-content, or the whole money column refuses to go under ~590px and
+       phones get a horizontally panning, zoomed-out page */
+    main > *, #wallet-open-card > *, #w-open > *, .money-grid > *, .money-col > * { min-width: 0; max-width: 100%; }
+    .grid { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+    .card { background: var(--card); border-radius: var(--radius); padding: 22px; box-shadow: 0 1px 2px rgba(21,24,30,.04); }
+    .card h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--gray-500); }
+    .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--gray-100); }
+    .row:last-child { border-bottom: 0; }
+    .row .k { color: var(--muted); }
+    .row .v { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .dot.good { background: var(--good); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+    label { display: block; font-size: 13px; font-weight: 600; color: var(--gray-700); margin: 14px 0 6px; }
+    input, select, textarea {
+      width: 100%; padding: 12px 16px; border-radius: var(--radius-s); border: 1px solid var(--border);
+      background: #fff; color: var(--text); font: inherit; font-variant-numeric: tabular-nums;
+      transition: border-color .12s, box-shadow .12s;
+    }
+    input:hover, select:hover, textarea:hover { border-color: var(--gray-400); }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-5); }
+    textarea { resize: vertical; }
+    .out { margin-top: 16px; background: var(--gray-100); border-radius: var(--radius-s); padding: 14px 16px; }
+    .out .big { font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
+    .out .big small { font-size: 13px; color: var(--muted); font-weight: 400; }
+    button {
+      margin-top: 14px; width: 100%; padding: 10px 16px; border: 0; border-radius: var(--radius-s); cursor: pointer;
+      background: var(--gray-950); color: #fff; font: 600 14px/1.4 Inter, -apple-system, sans-serif;
+      transition: background .12s, border-color .12s;
+    }
+    button:hover { background: var(--gray-800); } button:disabled { opacity: .45; cursor: default; }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button.secondary { background: var(--gray-100); color: var(--text); }
+    button.secondary:hover { background: #f5f7fa; box-shadow: inset 0 0 0 1px var(--gray-200); }
+    .warn-text { color: var(--warn); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+    .hint { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+    /* Activity rows (#69): direction + signed amount, counterpart, date, confirmations */
+    #w-history { margin: 0; }
+    .tx { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--gray-100); }
+    .tx:first-child { padding-top: 2px; } .tx:last-of-type { border-bottom: 0; }
+    .tx-icon { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+    .tx-icon.in { background: var(--good-bg); color: var(--good); }
+    .tx-icon.out { background: var(--gray-100); color: var(--gray-700); }
+    .tx-icon.dd { background: var(--accent-5); color: var(--accent); }
+    .tx-main { flex: 1 1 auto; min-width: 0; }
+    .tx-title { font-size: 13px; font-weight: 600; color: var(--text); }
+    .tx-sub { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tx-sub a { color: var(--muted); }
+    /* per-transaction copy button: debugging a tx needs the FULL txid, and a
+       truncated link can't give it — one tap copies all 64 chars */
+    .tx-sub .icon-btn, .ptx-copy { position: static; display: inline-grid; place-items: center; width: 18px; height: 18px; margin: 0 0 0 4px; padding: 0; box-shadow: none; background: none; color: var(--gray-400); vertical-align: -3px; }
+    .tx-sub .icon-btn:hover, .ptx-copy:hover { color: var(--text); background: none; }
+    .tx-sub .icon-btn.copied, .ptx-copy.copied { color: var(--good); }
+    .tx-sub .icon-btn svg, .ptx-copy svg { width: 13px; height: 13px; }
+    .tx-right { flex: 0 0 auto; text-align: right; }
+    .tx-amt { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .tx-amt.in { color: var(--good); } .tx-amt.out { color: var(--text); }
+    .tx-conf { font-size: 11px; margin-top: 1px; }
+    .tx-conf.pending { color: var(--warn); } .tx-conf.partial { color: var(--muted); } .tx-conf.final { color: var(--good); }
+    #w-history-more { width: auto; margin: 10px auto 0; display: block; padding: 5px 14px; font-size: 12px; }
+    /* amount entry header: label on the left, currency toggle + Max on the right (#70) */
+    .amt-head { display: flex; align-items: flex-end; justify-content: space-between; }
+    .amt-head label { margin-bottom: 0; }
+    .amt-tools { display: flex; gap: 6px; }
+    .amt-btn { width: auto; margin: 0 0 2px; padding: 4px 11px; font-size: 12px; border-radius: 999px; }
+    .err { color: var(--bad); font-size: 13px; margin-top: 8px; }
+    .oracles { display: grid; grid-template-columns: repeat(auto-fill, minmax(28px,1fr)); gap: 5px; margin-top: 10px; }
+    .oracle { height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+    .net-banner {
+      position: sticky; top: 0; z-index: 10; text-align: center; padding: 8px 12px;
+      background: var(--warn-bg); color: var(--warn);
+      font-size: 12px; font-weight: 600; letter-spacing: .02em;
+    }
+    .net-banner[hidden] { display: none; }
+    /* mainnet is RED/danger — unmistakably not the amber testnet banner (#54) */
+    .net-banner.danger { background: var(--primary-700); color: #fff; }
+    /* MAINNET/TESTNET pill (#54): always-visible network identity. Floats to a
+       fixed corner once the topbar scrolls away (class toggled in app.js). */
+    .net-pill { font-size: 10px; font-weight: 700; letter-spacing: .06em; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+    .net-pill.warn { background: var(--warn-bg); color: var(--warn); }
+    .net-pill.danger { background: var(--primary-700); color: #fff; }
+    .net-pill[hidden] { display: none; }
+    .net-pill.floating { position: fixed; top: 42px; right: 14px; z-index: 45; box-shadow: 0 1px 5px rgba(21,24,30,.25); }
+    a { color: var(--accent); }
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .logo { display: flex; align-items: center; gap: 8px; }
+    .corner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+    .chip-btn { width: auto; margin: 0; padding: 9px 14px; font-size: 13px; }
+    #w-chip { display: inline-flex; align-items: center; gap: 10px; background: #fff; border-radius: 999px; padding: 5px 6px 5px 14px; box-shadow: 0 1px 2px rgba(21,24,30,.06); min-width: 0; }
+    #w-chip .mono { font-size: 12px; color: var(--gray-700); white-space: nowrap; word-break: normal; overflow: hidden; text-overflow: ellipsis; }
+    .topbar { flex-wrap: wrap; }
+    #w-chip .chip-btn { border-radius: 999px; padding: 7px 12px; }
+    /* backup-status chip (spec §3): red "Not backed up" next to the address
+       chip, cleared only by a quiz pass. Click re-enters the backup ceremony. */
+    #w-backup-badge { width: auto; margin: 0; padding: 8px 12px; font-size: 12px; white-space: nowrap;
+      background: var(--bad-bg); color: var(--bad); border-radius: 999px; }
+    #w-backup-badge:hover { background: var(--primary-300); }
+    /* balance-gated warning strip (spec §3): funds but no backup, under the header */
+    .backup-strip { max-width: 520px; margin: 0 auto; padding: 12px 20px 0; }
+    .backup-strip-inner { display: flex; align-items: center; gap: 10px; background: var(--warn-bg);
+      color: var(--warn); border-radius: var(--radius-s); padding: 10px 14px; font-size: 12.5px; font-weight: 600; }
+    .backup-strip-inner span { flex: 1 1 auto; }
+    .backup-strip-inner button { width: auto; margin: 0; padding: 6px 12px; font-size: 12px; flex: none; }
+    /* header Network button: quiet chip with an aggregate status dot */
+    #net-btn { display: inline-flex; align-items: center; gap: 7px; margin: 0; width: auto;
+      background: #fff; color: var(--gray-700); border-radius: 999px; padding: 9px 14px; font-size: 13px;
+      box-shadow: 0 1px 2px rgba(21,24,30,.06); }
+    #net-btn:hover { background: var(--gray-50); box-shadow: inset 0 0 0 1px var(--gray-200); }
+    #net-btn .dot { margin: 0; }
+    /* site footer: demo/educational disclaimer + full-text link (#79) */
+    footer.site { max-width: 520px; margin: 0 auto; padding: 0 20px 40px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    footer.site .disclaimer-line { margin: 0; }
+    footer.site .version-line { margin: 6px 0 0; font-size: 11px; color: var(--gray-400); }
+    footer.site .gh-link { display: inline-block; margin-top: 10px; color: var(--gray-400); }
+    footer.site .gh-link:hover { color: var(--gray-700); }
+    footer.site .gh-link svg { display: block; }
+    footer.site button.linklike { display: inline; width: auto; margin: 0; padding: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }
+    footer.site button.linklike:hover { background: none; color: var(--accent-2); }
+    /* low-emphasis inline link-button — the receive compat toggle (#103) must
+       not compete with the primary taproot address it sits under */
+    button.textlink { display: inline; width: auto; margin: 10px 0 0; padding: 0; background: none; color: var(--muted); font: 500 12.5px/1.4 Inter, -apple-system, sans-serif; text-decoration: underline; cursor: pointer; }
+    button.textlink:hover { background: none; color: var(--text); }
+    .modal .disclaimer-body p { margin: 0 0 12px; color: var(--gray-700); }
+    .modal .disclaimer-body p:last-child { margin-bottom: 0; }
+    .modal .disclaimer-body strong { color: var(--text); }
+    .modal .disclaimer-body ul { margin: 0 0 12px; padding-left: 20px; color: var(--gray-700); }
+    .modal .disclaimer-body li { margin-bottom: 6px; }
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(21,24,30,.45); z-index: 50; }
+    .modal-backdrop.open { display: grid; place-items: center; }
+    .modal { background: #fff; border-radius: var(--radius); padding: 22px; width: min(460px, calc(100vw - 32px)); max-height: 86vh; max-height: 86dvh; overflow: auto; overscroll-behavior: contain; box-shadow: 0 18px 50px rgba(21,24,30,.25); }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; }
+    .modal-head h3 { margin: 0; font-size: 16px; font-weight: 600; }
+    /* kit Dropdown: white r8 trigger, floating white r8 list (shadow 0 1px 5px) */
+    .dd { position: relative; }
+    .dd > select { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; margin: 0; padding: 0; border: 0; }
+    .dd-trigger { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; margin: 0;
+      padding: 12px 16px; border-radius: var(--radius-s); border: 1px solid var(--border); background: #fff; color: var(--text);
+      font: inherit; cursor: pointer; text-align: left; transition: background .12s, border-color .12s; }
+    .dd-trigger:hover { background: var(--gray-50); border-color: var(--gray-400); }
+    .dd.open .dd-trigger { background: var(--gray-100); border-color: var(--gray-400); }
+    .dd-caret { transition: transform .15s; color: var(--gray-700); flex: none; }
+    .dd.open .dd-caret { transform: rotate(180deg); }
+    .dd-list { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; right: 0; background: #fff;
+      border-radius: var(--radius-s); padding: 8px; border: 1px solid var(--gray-100);
+      box-shadow: 0 1px 5px rgba(38,38,38,.1), 0 10px 28px rgba(21,24,30,.10); display: none; max-height: 300px; overflow: auto; }
+    .dd.open .dd-list { display: grid; gap: 4px; }
+    .dd-option { border-radius: 8px; padding: 9px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .dd-option:hover { background: var(--gray-100); }
+    .dd-option.selected { background: #f6fbff; font-weight: 600; }
+    .dd-option.selected::after { content: '✓'; color: var(--accent); font-weight: 700; }
+    /* confirmation screens sit on gray like the kit's modal inner blocks */
+    #w-mint-confirm, #w-tr-confirm, #w-send-confirm, #w-redeem-confirm {
+      background: var(--gray-100); border-radius: var(--radius-s); padding: 8px 16px 14px; margin-top: 14px;
+    }
+    #w-mint-confirm .row, #w-tr-confirm .row, #w-send-confirm .row, #w-redeem-confirm .row { border-bottom-color: var(--gray-200); }
+    #w-mint-confirm button, #w-tr-confirm button, #w-send-confirm button, #w-redeem-confirm button { margin-top: 12px; }
+
+    /* ---- v3 hero: balance + action pills ---- */
+    .money-grid, .money-col { display: grid; gap: 14px; align-content: start; }
+    #wallet-open-card, #w-open { display: grid; gap: 14px; }
+    /* phones: 16px form fields (anything smaller makes iOS Safari zoom in on
+       focus and leave the page zoomed = janky panning), tighter chrome */
+    @media (max-width: 600px) {
+      /* the .mono variants need their own rule — .mono's 12.5px outranks a
+         bare element selector, and the seed/address fields are the ones iOS
+         focus-zooms on most */
+      input, select, textarea, input.mono, textarea.mono { font-size: 16px; }
+      header { padding: 16px 16px 4px; }
+      main { padding: 10px 16px 48px; }
+      .backup-strip { padding: 10px 16px 0; }
+      .card { padding: 18px 16px; }
+      .hero { padding: 26px 16px 20px; }
+      .hero .balance { font-size: 34px; }
+      .guest { padding: 24px 16px 30px; }
+      .guest img.guest-art { width: min(200px, 60%); }
+      .net-banner { padding: 7px 10px; font-size: 11px; }
+      .actions { gap: 8px; }
+      .action { font-size: 12px; padding: 12px 4px 9px; }
+    }
+    /* adaptive: single phone-like column by default, two columns on desktop */
+    @media (min-width: 960px) {
+      header, main, .backup-strip { max-width: 1000px; }
+      .money-grid { grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr); align-items: start; }
+    }
+    /* tier slider (mint modal): 7 discrete stops over the lock tiers */
+    .tier-picker { position: relative; background: var(--gray-100); border-radius: var(--radius-s); padding: 14px 16px 10px; }
+    .tier-picker > select { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; margin: 0; padding: 0; border: 0; }
+    .tier-readout { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    #tier-name { font-weight: 600; font-size: 15px; }
+    #tier-ratio { font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-5); border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+    #tier-slider { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 6px; border-radius: 999px;
+      background: var(--gray-200); margin: 16px 0 8px; padding: 0; border: 0; outline: none; cursor: pointer; }
+    #tier-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+      background: #fff; border: 2px solid var(--accent); box-shadow: 0 1px 4px rgba(21,24,30,.25); cursor: grab; }
+    #tier-slider::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); box-shadow: 0 1px 4px rgba(21,24,30,.25); cursor: grab; }
+    #tier-slider:focus-visible { box-shadow: 0 0 0 3px var(--accent-5); }
+    .tier-scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+    /* the price block docks inside the hero card while connected; guests
+       don't see the market chart at all (it reads as noise pre-wallet) */
+    .hero #price-block { text-align: left; margin: 18px 0 4px; }
+    .hero #price-block .price-now { font-size: 16px; }
+    .hero #price-block h2 { margin-bottom: 0; }
+    .hero #price-block .chart-wrap { margin-top: 8px; }
+    .hero #price-block .chart-wrap svg { height: 72px; }
+    /* tx success view (send / mint modals) */
+    .tx-success { display: none; text-align: center; padding: 16px 0 4px; }
+    .modal-backdrop.success .tx-success { display: block; }
+    #send-modal.success .send-forms, #send-modal.success label[for="send-asset"], #send-modal.success .dd { display: none; }
+    #mint-modal.success #w-mint { display: none; }
+    #consolidate-modal.success #w-consolidate { display: none; }
+    .tx-success .tx-check { color: var(--good); }
+    .tx-success .tx-title { margin: 10px 0 2px; font-size: 18px; font-weight: 600; }
+    .tx-success .tx-link { display: inline-block; margin: 2px 0 4px; }
+    .tx-success a.tx-link:not([href]) { color: var(--muted); text-decoration: none; cursor: default; }
+    /* receive QR */
+    /* receive: DGB / DigiDollar form switch — one key, two encodings */
+    .seg { display: grid; grid-auto-flow: column; gap: 4px; background: var(--gray-100); border-radius: 999px; padding: 4px; margin: 14px 0 4px; }
+    .seg-btn { width: auto; margin: 0; padding: 7px 12px; border-radius: 999px; background: none; color: var(--muted); font-size: 13px; font-weight: 600; }
+    .seg-btn:hover { background: none; color: var(--text); }
+    .seg-btn.on { background: #fff; color: var(--text); box-shadow: 0 1px 2px rgba(21,24,30,.10); }
+    /* address + inline copy: the box is the target, the icon is the affordance */
+    .addr-box { position: relative; }
+    .addr-box .out { padding-right: 46px; word-break: break-all; }
+    .icon-btn { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; margin: 0; padding: 0; display: grid; place-items: center; border-radius: 8px; background: #fff; color: var(--gray-700); box-shadow: 0 1px 2px rgba(21,24,30,.12); }
+    .icon-btn:hover { background: #fff; color: var(--text); }
+    .icon-btn.copied { color: var(--good); }
+    .icon-btn svg { display: block; }
+    /* previously used addresses */
+    .rx-prev { margin-top: 8px; border-top: 1px solid var(--gray-100); }
+    .rx-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--gray-100); font-size: 12.5px; }
+    .rx-row:last-child { border-bottom: 0; }
+    .rx-row .rx-i { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 26px; }
+    .rx-row .rx-addr { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rx-row .rx-tag { font-size: 10px; font-weight: 600; letter-spacing: .02em; padding: 2px 8px; border-radius: 999px; background: var(--good-bg); color: var(--good); white-space: nowrap; }
+    .rx-row .rx-tag.idle { background: var(--gray-100); color: var(--muted); }
+    .rx-row .rx-tag.now { background: var(--gray-900); color: #fff; }
+    .rx-row .icon-btn { position: static; width: 26px; height: 26px; box-shadow: none; background: var(--gray-100); }
+    .qr { display: grid; place-items: center; margin: 4px 0 10px; }
+    .qr svg { width: 176px; height: 176px; background: #fff; border: 1px solid var(--gray-100); border-radius: 12px; padding: 10px; }
+    .hero #w-faucet { margin-top: 12px; }
+    .hero { text-align: center; padding: 30px 22px 24px; }
+    .hero .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--gray-500); }
+    .hero .balance { font-size: 40px; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; margin-top: 6px; }
+    .hero .balance small { font-size: 18px; font-weight: 600; color: var(--gray-500); }
+    .hero .usd { color: var(--muted); font-size: 15px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .actions { display: flex; gap: 10px; margin-top: 20px; }
+    .action { flex: 1; display: grid; place-items: center; gap: 5px; margin: 0; padding: 13px 0 10px;
+      background: var(--gray-100); color: var(--text); border-radius: var(--radius); font-size: 12.5px; font-weight: 600; }
+    .action:hover { background: #f5f7fa; box-shadow: inset 0 0 0 1px var(--gray-200); }
+    .action svg { display: block; color: var(--accent); }
+    .action:disabled { opacity: .45; }
+    /* guest hero (no wallet / locked) */
+    .guest { text-align: center; padding: 28px 22px 36px; }
+    .guest img.guest-art { width: min(240px, 70%); height: auto; filter: drop-shadow(0 22px 18px rgba(21,24,30,.14)); }
+    .guest h1 { margin: 14px 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+    .guest p { margin: 0 auto; max-width: 320px; color: var(--muted); font-size: 13.5px; }
+    .guest button { max-width: 260px; }
+    /* the waiting clip — one look for both waits: boot (#w-loading) and the
+       post-unlock sync veil (#loading-veil) */
+    .loading-clip { width: min(300px, 80%); border-radius: 12px; }
+    /* a busy button says so instead of silently greying out */
+    button.is-busy { animation: busy-pulse 1.2s ease-in-out infinite; }
+    @keyframes busy-pulse { 50% { opacity: .45; } }
+    /* price chart */
+    .price-head { display: flex; justify-content: space-between; align-items: baseline; }
+    .price-now { font-size: 22px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+    .price-delta { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .price-delta.up { color: var(--good); } .price-delta.down { color: var(--bad); }
+    .chart-wrap { position: relative; margin-top: 12px; }
+    .chart-wrap svg { display: block; width: 100%; height: 96px; }
+    .chart-tip { position: absolute; pointer-events: none; display: none; transform: translate(-50%, 0);
+      background: #fff; border-radius: var(--radius-s); box-shadow: 0 1px 5px rgba(38,38,38,.12), 0 6px 18px rgba(21,24,30,.12);
+      padding: 6px 10px; font-size: 12px; white-space: nowrap; z-index: 5; }
+    .chart-tip .tv { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .chart-tip .tk { color: var(--muted); margin-left: 6px; }
+    /* asset rows */
+    .asset { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--gray-100); }
+    .asset:last-child { border-bottom: 0; }
+    .asset-ic { width: 36px; height: 36px; border-radius: 50%; flex: none; display: block; }
+    .asset-name { font-weight: 600; }
+    .asset-sub { font-size: 12px; color: var(--muted); }
+    .asset-amt { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+    .asset-amt .a1 { font-weight: 600; }
+    .asset-amt .a2 { font-size: 12px; color: var(--muted); }
+    /* send modal: the asset dropdown decides which form shows — via classes on
+       the modal (NOT inline styles: verify drivers read w-send/w-transfer
+       inline display and clicks must keep working on the hidden form) */
+    #send-modal .send-forms > div { display: none; }
+    #send-modal.asset-dgb #w-send { display: block; }
+    #send-modal.asset-dd #w-transfer { display: block; }
+    /* seed reveal ceremony (backup + show-seed): numbered word grid, blurred
+       until tapped. Numbers come from a CSS counter so the element's
+       textContent stays exactly the whitespace-joined words (drivers parse it). */
+    .seed-reveal { position: relative; margin-top: 12px; }
+    .seed-grid { list-style: none; counter-reset: seed; margin: 0; padding: 12px; background: var(--gray-100);
+      border-radius: var(--radius-s); display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 8px; }
+    .seed-grid li { counter-increment: seed; font-size: 13px; padding: 5px 8px; background: #fff; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; }
+    .seed-grid li::before { content: counter(seed); display: inline-block; width: 18px; color: var(--gray-400); font-size: 11px; }
+    .seed-reveal.blurred .seed-grid { filter: blur(7px); user-select: none; pointer-events: none; }
+    .seed-veil { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; display: none;
+      background: none; color: var(--gray-700); font-weight: 600; border-radius: var(--radius-s); }
+    .seed-veil:hover { background: rgba(255,255,255,.3); }
+    .seed-reveal.blurred .seed-veil { display: block; }
+    /* backup quiz: 3 labeled slots + word chips */
+    .quiz-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+    .quiz-slot { margin: 0; padding: 7px 6px 8px; background: var(--gray-100); color: var(--text);
+      border: 1px dashed var(--gray-300); border-radius: var(--radius-s); font-weight: 600; font-size: 13px; }
+    .quiz-slot:hover { background: var(--gray-100); }
+    .quiz-slot.filled { border-style: solid; border-color: var(--gray-300); background: #fff; }
+    .quiz-slot.filled:hover { background: var(--gray-50); }
+    .quiz-slot .qn { display: block; font-size: 10.5px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+    .quiz-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .quiz-chip { width: auto; margin: 0; padding: 6px 13px; border-radius: 999px; font-size: 13px; }
+    .quiz-chip:disabled { opacity: .35; }
+    /* wallet switcher (spec §7): the address chip opens it; rows carry the
+       active check + not-backed-up dot, per-row manage expands rename/remove */
+    #w-chip { cursor: pointer; }
+    #w-chip:hover #w-chip-addr { color: var(--text); }
+    .wal-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+    .wal-pick { flex: 1 1 auto; width: auto; margin: 0; padding: 8px 10px; background: none; color: var(--text);
+      text-align: left; border-radius: var(--radius-s); display: flex; align-items: center; gap: 10px; }
+    .wal-pick:hover { background: var(--gray-100); }
+    .wal-name { font-weight: 600; }
+    .wal-sub { font-size: 11.5px; color: var(--muted); font-weight: 400; }
+    .wal-check { margin-left: auto; color: var(--accent); font-weight: 700; }
+    .wal-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); vertical-align: 1px; }
+    .wal-manage { flex: none; width: auto; margin: 0; padding: 6px 12px; font-size: 14px; line-height: 1.2; }
+    .wal-edit { padding: 2px 0 12px; border-bottom: 1px solid var(--gray-100); }
+    .wal-edit .grid button { margin-top: 10px; }
+    button.danger { background: var(--primary-700); }
+    button.danger:hover { background: var(--primary-800); }
+    section[hidden] { display: none !important; }
+    /* show/hide toggle on password fields: a mistyped master password costs
+       real money, and blind typing is how the typos happen */
+    .pw-wrap { position: relative; display: block; }
+    .pw-wrap input { padding-right: 44px; }
+    .pw-toggle { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; margin: 0; padding: 0; display: grid; place-items: center; background: none; color: var(--gray-500); border-radius: 6px; }
+    .pw-toggle:hover { background: var(--gray-100); color: var(--text); }
+    .pw-toggle.on { color: var(--accent); }
+    .pw-toggle svg { display: block; }
+    /* treasury dashboard cards (FR-2) */
+    .t-card { border: 1px solid var(--gray-200); border-radius: var(--radius-s); padding: 12px 14px; margin-top: 10px; }
+    .t-card .t-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .t-card .t-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .t-card .t-status { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; background: var(--gray-100); color: var(--muted); white-space: nowrap; }
+    .t-card .t-status.locked { background: var(--accent-5); color: var(--accent); }
+    .t-card .t-status.mature { background: var(--good-bg); color: var(--good); }
+    .t-card .t-status.soon { background: var(--warn-bg); color: var(--warn); }
+    .t-card .t-rows { font-size: 12.5px; color: var(--gray-700); margin-top: 6px; display: grid; gap: 2px; }
+    .t-card .t-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .t-card .t-actions button { width: auto; margin: 0; padding: 6px 12px; font-size: 12px; }
+    /* Spend DD directory: vote pill — accent-tinted once the server confirms
+       your vote; an in-flight vote dims but keeps its number (no fake +1) */
+    .spend-vote { border-radius: 999px; }
+    .spend-vote.voted { background: var(--accent-5); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-3); }
+    .spend-vote.voted:hover { background: var(--accent-4); }
+    /* split wizard: per-treasury name rows + progress list */
+    .sp-name-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+    .sp-name-row .sp-seq { flex: none; width: 22px; font-weight: 700; color: var(--muted); font-size: 12px; }
+    .sp-item { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--gray-100); font-size: 12.5px; }
+    .sp-item:last-child { border-bottom: 0; }
+    .sp-item .sp-state { flex: none; color: var(--muted); }
+    details.adv summary { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <!-- populated at runtime from the node's chain (netchrome.js, #61) -->
+  <div class="net-banner" id="net-banner" hidden></div>
+  <header>
+    <div class="topbar">
+      <div class="logo" aria-label="DGBclick Wallet">
+        <img src="/logo.png" alt="DGBclick Wallet" style="height:30px;display:block" />
+        <span id="modeBadge" class="badge mock">loading…</span>
+      </div>
+      <div class="corner">
+        <!-- network identity pill (#54): text/level set at runtime from the node's chain -->
+        <span id="net-pill" class="net-pill" hidden></span>
+        <!-- backup-status chip (spec §3): shown while the ACTIVE wallet has no
+             verified backup; click re-enters the backup ceremony -->
+        <button id="w-backup-badge" style="display:none" title="Back up this wallet's seed phrase">Not backed up</button>
+        <!-- role/tabindex, not a <button>: it nests the real Disconnect button,
+             and a button inside a button is invalid HTML (browsers re-parent it) -->
+        <span id="w-chip" role="button" tabindex="0" title="Switch or manage wallets" style="display:none"><span id="w-chip-addr" class="mono"></span><button id="w-disconnect" class="secondary chip-btn">Disconnect</button></span>
+        <button id="w-connect" class="chip-btn" style="display:none">Get started</button>
+        <button id="net-btn" title="Network status"><span id="net-dot" class="dot warn"></span>Network</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- balance-gated backup warning (spec §3): the active wallet holds funds
+       but has no verified backup. Dismiss hides it for this session only. -->
+  <div class="backup-strip" id="w-backup-strip" style="display:none">
+    <div class="backup-strip-inner">
+      <span id="w-backup-strip-text">This wallet holds funds but has no backup — if this browser data is lost, the funds are gone.</span>
+      <button id="w-backup-strip-go" type="button">Back up now</button>
+      <button id="w-backup-strip-dismiss" type="button" class="secondary" title="Dismiss for this session" aria-label="Dismiss for this session">✕</button>
+    </div>
+  </div>
+
+  <!-- interrupted-broadcast recovery (audit C1): a signed transaction whose
+       broadcast answer was lost MAY be in the mempool. Never rebuild it —
+       rebroadcast the identical hex or reconcile via the indexer tx lookup. -->
+  <div class="backup-strip" id="w-pending-tx" style="display:none">
+    <div class="backup-strip-inner" style="display:block">
+      <span id="w-pending-tx-text" style="display:block;margin-bottom:6px"></span>
+      <div id="w-pending-tx-list"></div>
+    </div>
+  </div>
+
+  <main>
+    <!-- boot placeholder (drivers key on w-loading via show()); visible from
+         the first paint — show() hides it once the wallet state is known -->
+    <div id="wallet-card">
+      <section class="card guest" id="w-loading">
+        <video src="/loading.mp4" autoplay loop muted playsinline aria-hidden="true" class="loading-clip"></video>
+        <p class="hint" id="w-loading-msg" role="status" style="margin-top:10px">Loading wallet…</p>
+      </section>
+      <div id="w-disconnected" style="display:none"></div>
+    </div>
+
+    <!-- guest hero: no wallet yet / locked -->
+    <section class="card guest" id="hero-guest" style="display:none">
+      <img src="/hero-art.png" alt="" aria-hidden="true" class="guest-art" />
+      <h1>DGBclick Wallet</h1>
+      <p>The wallet for DigiByte &amp; DigiDollar — the decentralized USD stablecoin. Keys are generated in this browser and never leave it.</p>
+      <!-- vault-lost tombstone (audit C2): localStorage survived but the IndexedDB
+           vault did not — say what happened and how to recover instead of
+           presenting a fresh-install hero to someone who had funds -->
+      <p id="w-tombstone-note" class="hint warn-text" style="display:none">This browser previously held a DGBclick Wallet, but its stored data is gone — the browser cleared, evicted, or corrupted its site data. Connect and choose “I already have a seed phrase” or “Restore from backup file” to recover your funds.</p>
+      <button id="hero-connect">Get started</button>
+      <!-- for Core-wallet users RECEIVING a gifted treasury — needs no wallet
+           here; everything runs client-side (core-recipient-gift-findings.md) -->
+      <button id="hero-giftkey" class="textlink" type="button">Using DigiByte Core? Make a Gift key to receive a gifted treasury</button>
+    </section>
+
+    <!-- Make a Gift key: turn Core's getaddressinfo output into a ddgift1… code -->
+    <div class="modal-backdrop" id="giftkey-modal">
+      <div class="modal">
+        <div class="modal-head"><h3>Make a Gift key</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <p class="hint">To receive a gifted treasury in your <strong>DigiByte Core</strong> wallet, the giver needs your Gift key — a code no address can substitute for. Three steps in your Core wallet's built-in console (open it via <strong>Window&nbsp;→&nbsp;Console</strong>, or Help&nbsp;→&nbsp;Debug&nbsp;window&nbsp;→&nbsp;Console in older versions):</p>
+        <p class="hint" style="margin-top:8px"><strong>1.</strong> Type this and press Enter — it prints a new address starting <span class="mono">dgb1p</span>:</p>
+        <pre class="mono" style="overflow-x:auto">getnewaddress gift bech32m</pre>
+        <p class="hint"><strong>2.</strong> Type <span class="mono">getaddressinfo</span>, a space, then paste that address:</p>
+        <pre class="mono" style="overflow-x:auto">getaddressinfo dgb1p…the address from step 1</pre>
+        <p class="hint"><strong>3.</strong> Copy everything it prints and paste it below.
+          <br />(Command-line users: the same two commands work with a <span class="mono">digibyte-cli</span> prefix — keep the <span class="mono">gift</span> label, some shells eat an empty <span class="mono">""</span>.)</p>
+        <label for="gk-input">Paste the getaddressinfo output here</label>
+        <textarea id="gk-input" class="mono" rows="5" spellcheck="false" autocomplete="off"></textarea>
+        <p class="hint">Everything stays in this browser — the paste contains only public keys, and nothing is sent anywhere.</p>
+        <button id="gk-make">Make my Gift key</button>
+        <div class="err" id="gk-err"></div>
+        <div id="gk-result" style="display:none">
+          <label>Your Gift key — give this to the person gifting you a treasury</label>
+          <div class="addr-box">
+            <div class="out mono" style="margin-top:0" id="gk-out-key"></div>
+            <button type="button" class="icon-btn" data-copy="gk-out-key" title="Copy Gift key" aria-label="Copy Gift key"></button>
+          </div>
+          <label style="margin-top:10px">Its DigiDollar address (for cross-checking)</label>
+          <div class="out mono" id="gk-out-addr"></div>
+          <p class="hint" id="gk-verified"></p>
+          <p class="hint">After the gift is minted, your DigiDollar balance and the <strong>$DD Vault</strong> tab show it right away — but Core's "$DD Transactions" list may NOT list the incoming gift (it doesn't yet recognize mints made for you by someone else). Trust the balance and the Vault. Console equivalents: <span class="mono">getdigidollarbalance</span>, <span class="mono">listdigidollarpositions</span>, and at maturity <span class="mono">redeemdigidollar &lt;position txid&gt; &lt;cents&gt;</span>. Keep ≈0.5 DGB in the wallet for the redeem fee.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- connected: hero balance + actions, then assets / DigiDollar / activity -->
+    <div id="wallet-open-card" style="display:none">
+    <!-- shown between unlock and the first indexer answer -->
+    <section class="card guest" id="loading-veil" style="display:none">
+      <video src="/loading.mp4" autoplay loop muted playsinline aria-hidden="true" class="loading-clip"></video>
+      <p class="hint" role="status" style="margin-top:10px" id="sync-status">Syncing your wallet…</p>
+    </section>
+    <div id="w-open" style="display:none">
+    <!-- connected-but-no-indexer deployments (#61): balances/history/sending
+         need the indexer seam; receiving is client-side and still works -->
+    <section class="card" id="w-no-indexer" style="display:none">
+      <h2>Balance unavailable</h2>
+      <p class="hint" style="margin:0 0 4px">This deployment has no indexer service, so balances, history and sending are unavailable here. Receiving still works — funds arrive on-chain and show up in any block explorer.</p>
+      <button id="w-no-indexer-receive" class="secondary">Show receive address</button>
+    </section>
+    <div id="w-money" class="money-grid" style="display:none">
+      <div class="money-col" id="money-col-a">
+      <section class="card hero">
+        <div class="eyebrow">Total balance</div>
+        <div class="balance"><span id="w-balance">—</span> <small>DGB</small></div>
+        <div class="usd" id="w-balance-usd"></div>
+        <div class="row" id="w-pending-row" style="display:none;justify-content:center;border:0;padding:2px 0 0"><span class="k">Incoming (pending)</span><span class="v warn-text">+<span id="w-pending"></span> DGB</span></div>
+        <!-- the DGB price block (#price-block) docks here while connected -->
+        <div id="price-slot-hero"></div>
+        <div class="actions">
+          <button class="action" id="act-send" type="button">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 13L13 3M13 3H6M13 3v7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Send</button>
+          <button class="action" id="act-receive" type="button">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M13 3L3 13M3 13h7M3 13V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Receive</button>
+          <button class="action" id="act-mint" type="button">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2"/><path d="M8 5.5v5M5.5 8h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Mint DigiDollar</button>
+          <button class="action" id="act-treasury" type="button">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="2" y="6" width="12" height="8" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 6V5a3 3 0 0 1 6 0v1" stroke="currentColor" stroke-width="1.8"/><circle cx="8" cy="10" r="1.2" fill="currentColor"/></svg>
+            Treasuries</button>
+          <button class="action" id="act-spend" type="button">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M2 3h2l1.6 8h7.2l1.2-6H5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="13.4" r="1.1" fill="currentColor"/><circle cx="11.5" cy="13.4" r="1.1" fill="currentColor"/></svg>
+            Spend DD</button>
+        </div>
+        <button id="w-faucet" class="secondary" style="display:none">Get testnet DGB</button>
+        <div class="hint" id="w-faucet-out"></div>
+      </section>
+      </div>
+
+      <div class="money-col" id="money-col-b">
+      <!-- assets -->
+      <section class="card">
+        <h2>Assets</h2>
+        <div class="asset">
+          <img class="asset-ic" src="/asset-dgb.png" alt="" aria-hidden="true" />
+          <div><div class="asset-name">DigiByte</div><div class="asset-sub">DGB</div></div>
+          <div class="asset-amt"><div class="a1"><span id="as-dgb">—</span> DGB</div><div class="a2" id="as-dgb-usd"></div></div>
+        </div>
+        <div class="asset">
+          <img class="asset-ic" src="/asset-dd.png" alt="" aria-hidden="true" />
+          <div><div class="asset-name">DigiDollar</div><div class="asset-sub">spendable</div></div>
+          <div class="asset-amt"><div class="a1">$<span id="w-dd-balance">0.00</span></div><div class="a2">USD-pegged</div></div>
+        </div>
+      </section>
+
+      <!-- DigiDollar positions (#13) + redeem (#16) -->
+      <section class="card">
+        <h2>DigiDollar positions</h2>
+        <div class="row" style="border:0;padding-top:0"><span class="k">Locked in positions</span><span class="v" id="w-dd-total"></span></div>
+        <div id="w-positions" class="hint" style="margin:6px 0 10px">No open positions.</div>
+        <!-- Mis-gifted (address-key) positions: owned by this wallet's ADDRESS
+             key rather than its internal key, so no ordinary scan finds them.
+             Shown here so they can never be silently forgotten. -->
+        <div id="w-stranded" style="display:none"></div>
+        <div id="w-redeem-confirm" style="display:none">
+          <div class="row"><span class="k">Redeeming position</span><span class="v mono" id="w-rd-c-txid"></span></div>
+          <div class="row"><span class="k">Burning</span><span class="v">$<span id="w-rd-c-dd"></span></span></div>
+          <div class="row"><span class="k">Collateral returned</span><span class="v"><span id="w-rd-c-coll"></span> DGB</span></div>
+          <div class="row"><span class="k">Network fee</span><span class="v"><span id="w-rd-c-fee"></span> DGB</span></div>
+          <div class="row" id="w-rd-c-gather-row" style="display:none"><span class="k">Moving into place</span><span class="v">$<span id="w-rd-c-gather"></span></span></div>
+          <div class="hint" id="w-rd-c-gather-note" style="display:none"></div>
+          <div class="hint warn-text" id="w-rd-c-stale" style="display:none"></div>
+          <div class="grid">
+            <button id="w-rd-go">Confirm &amp; redeem</button>
+            <button id="w-rd-cancel" class="secondary">Cancel</button>
+          </div>
+        </div>
+        <div class="hint" id="w-rd-out"></div>
+        <div class="err" id="w-rd-err"></div>
+        <!-- revealed by busy() only on a fragmentation error (#103 decision 2) -->
+        <button id="w-rd-err-consolidate" class="secondary" style="display:none">Consolidate coins</button>
+        <button id="dd-mint-open" class="secondary">Mint DigiDollar</button>
+      </section>
+
+      <!-- activity -->
+      <section class="card">
+        <h2>Activity</h2>
+        <div id="w-history" class="hint" style="margin:0"></div>
+      </section>
+      </div>
+    </div>
+    <div class="err" id="w-open-err"></div>
+    </div>
+    </div>
+
+    <!-- DGB price (public: standalone card while no wallet; the same block
+         docks into the hero card when connected — moved by show()).
+         Hidden until show() rules on it: dockPriceBlock keeps this card for
+         the connected-but-no-indexer case only, so a visible-by-default card
+         would flash an empty "DGB price —" through the whole boot wait. -->
+    <section class="card" id="price-card" style="display:none">
+      <div id="price-slot-guest">
+        <div id="price-block">
+          <div class="price-head">
+            <div>
+              <h2 style="margin-bottom:4px">DGB price</h2>
+              <div class="price-now" id="o-price">—</div>
+            </div>
+            <div class="price-delta" id="price-delta"></div>
+          </div>
+          <div class="chart-wrap" id="chart-wrap">
+            <svg id="price-chart" role="img" aria-label="DGB price, last 24 hours"></svg>
+            <div class="chart-tip" id="chart-tip"><span class="tv"></span><span class="tk"></span></div>
+          </div>
+          <div class="hint" id="price-hint"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Connect modal: create / restore / unlock (EVM-style corner flow) -->
+    <div id="w-connect-modal" class="modal-backdrop">
+      <div class="modal">
+      <div class="modal-head"><h3>Get started</h3><button id="w-modal-close" class="secondary chip-btn">Close</button></div>
+
+      <!-- no wallet yet: step 1 choose, step 2 fill -->
+      <div id="w-none" style="display:none">
+        <div id="w-choice">
+          <p class="hint" style="margin-top:0">Your keys are generated in this browser and never sent anywhere. Pick how to start:</p>
+          <button id="w-create-choice">Create new wallet</button>
+          <button id="w-show-restore" class="secondary">I already have a seed phrase</button>
+          <button id="w-show-import" class="secondary">Restore from backup file</button>
+          <button id="w-show-gh-restore" class="secondary">Restore from GitHub</button>
+          <button id="w-show-desc" class="secondary">Import from DigiByte Core (descriptor)</button>
+        </div>
+        <div id="w-form" style="display:none">
+          <div id="w-restore" style="display:none">
+            <label for="w-restore-seed">Seed phrase (12 or 24 words)</label>
+            <textarea id="w-restore-seed" rows="3" class="mono" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+          </div>
+          <!-- keystore file import (spec §4): picker → validated envelope →
+               the FILE's password. The wallet name comes from the file. -->
+          <div id="w-import" style="display:none">
+            <label for="w-import-file">Backup file (.keystore.json)</label>
+            <input id="w-import-file" type="file" accept=".json,application/json" />
+            <div class="hint" id="w-import-info" style="display:none"></div>
+            <div class="hint warn-text" id="w-import-warn" style="display:none"></div>
+            <label for="w-import-pass">File password <span class="hint" style="display:inline">— the master password of the wallet that exported it</span></label>
+            <input id="w-import-pass" type="password" autocomplete="off" />
+            <p class="hint">Received a treasury? Its .keystore.json plus the transfer passphrase restores it here — and you can verify the locked position on a block explorer first: the txid is in the RECEIPT.txt that came with it.</p>
+          </div>
+          <!-- Core descriptor import: Core wallets have no BIP39 phrase, so a
+               private tr() descriptor is the ONLY way to bring one here. The
+               keys stay in this browser exactly like a seeded wallet's. -->
+          <div id="w-desc" style="display:none">
+            <p class="hint" style="margin-top:0">DigiByte Core has no seed phrase to give — it exports <strong>descriptors</strong>. In Core's console (Window → Console) run:</p>
+            <pre class="mono" style="overflow-x:auto">listdescriptors true</pre>
+            <p class="hint">Paste the <strong>whole output</strong> — Core exports one key chain per address type, so a single line brings in only part of your wallet. (The <span class="mono">true</span> matters: without it Core prints watch-only keys that cannot sign.)</p>
+            <label for="w-desc-text">Private descriptors (paste the whole JSON)</label>
+            <textarea id="w-desc-text" rows="6" class="mono" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder='{ "wallet_name": "…", "descriptors": [ { "desc": "tr([abcd1234/86h/20h/0h]xprv…/0/*)#checksum", … } ] }'></textarea>
+            <p class="hint warn-text">This is secret key material — anyone holding it controls those funds. It is encrypted with your master password on this device and never sent anywhere.</p>
+            <!-- Typed acknowledgement (not a checkbox): pasting a private
+                 descriptor hands this browser spending control of a Core
+                 wallet — the highest-trust action the app offers, and the one
+                 a phishing clone would most want to rush. Typing the word
+                 forces a beat of attention, and the review line above it
+                 states the consequence in one sentence. -->
+            <p class="hint" style="margin-top:12px">You are about to give <strong>this browser</strong> the power to spend from that Core wallet. Only do this on a device you trust, on a site you reached yourself.</p>
+            <label for="w-desc-ack">Type <span class="mono">IMPORT</span> to confirm</label>
+            <input id="w-desc-ack" class="mono" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="IMPORT" />
+          </div>
+          <!-- pre-filled with "Wallet N" so an untouched submit succeeds
+               (drivers set only the passwords and click w-create) -->
+          <div id="w-name-field">
+            <label for="w-create-name">Wallet name</label>
+            <input id="w-create-name" autocomplete="off" />
+          </div>
+          <!-- master password: only shown (and required) while no vault exists;
+               adding a wallet to an unlocked vault skips straight to reveal -->
+          <div id="w-pass-fields">
+            <label for="w-create-pass">Master password <span class="hint" style="display:inline">— one password for every wallet on this device</span></label>
+            <input id="w-create-pass" type="password" autocomplete="new-password" />
+            <label for="w-create-pass2">Repeat password</label>
+            <input id="w-create-pass2" type="password" autocomplete="new-password" />
+          </div>
+          <button id="w-create">Create wallet</button>
+          <button id="w-restore-go" style="display:none">Restore wallet</button>
+          <button id="w-import-go" style="display:none">Import wallet</button>
+          <button id="w-desc-go" style="display:none">Import from descriptor</button>
+          <button id="w-form-back" class="secondary">Back</button>
+        </div>
+        <div class="err" id="w-none-err"></div>
+      </div>
+
+      <!-- backup ceremony (spec §2): reveal (blur + decoy words + tap to
+           reveal, no copy button) → quiz (3 slots, chips) → success beat.
+           The wallet is already OPEN underneath — this only overlays it. -->
+      <div id="w-backup-view" style="display:none">
+        <p class="hint warn-text" style="margin-top:0">These words are the ONLY backup of this wallet. Write them down in order and keep them offline — anyone who has them controls the funds.</p>
+        <div class="seed-reveal blurred" id="w-backup-reveal">
+          <ol class="seed-grid mono" id="w-backup-words"></ol>
+          <button type="button" id="w-backup-show" class="seed-veil">Tap to reveal</button>
+        </div>
+        <button id="w-backup-continue">Continue</button>
+        <div class="err" id="w-backup-err"></div>
+      </div>
+      <div id="w-quiz-view" style="display:none">
+        <p class="hint" style="margin-top:0">Check your backup: pick the right word for each position. The slots change every attempt.</p>
+        <div class="quiz-slots" id="w-quiz-slots"></div>
+        <div class="quiz-chips" id="w-quiz-chips"></div>
+        <button id="w-quiz-verify">Verify</button>
+        <div class="err" id="w-quiz-err"></div>
+      </div>
+      <div id="w-backup-success" style="display:none;text-align:center;padding:16px 0 4px">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" style="color:var(--good)"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M8 12.5l2.6 2.6L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div style="font-size:18px;font-weight:600;margin:10px 0 2px">Backed up</div>
+        <p class="hint" style="margin-top:2px">Keep the written words offline and private — anyone who has them controls the funds.</p>
+        <!-- encrypted backup file offered AT the ceremony (audit M1), not only
+             buried in the switcher. Still messaged as secondary: it dies with a
+             forgotten password and never counts as "backed up". -->
+        <button id="w-backup-file" class="secondary">Also download an encrypted backup file</button>
+        <p class="hint" id="w-backup-file-out" style="margin-top:4px"></p>
+        <button id="w-backup-success-done">Done</button>
+      </div>
+      <!-- skip: shared by the reveal and quiz steps. The id w-backup-done is
+           load-bearing — existing drivers dismiss the backup flow with ONE
+           click on it right after w-create. -->
+      <button id="w-backup-done" class="secondary" style="display:none">Remind me later</button>
+
+      <!-- wallet exists, locked -->
+      <div id="w-locked" style="display:none">
+        <!-- every wallet's name (cleartext vault meta, spec §7); hidden for a
+             not-yet-migrated v1 record, which has no names -->
+        <div class="hint" id="w-locked-names" style="display:none;margin-top:0;font-weight:600"></div>
+        <p class="hint" style="margin-top:0">Wallet is locked. Enter your password to unlock.</p>
+        <label for="w-unlock-pass">Password</label>
+        <input id="w-unlock-pass" type="password" autocomplete="current-password" />
+        <button id="w-unlock">Unlock</button>
+        <div class="err" id="w-locked-err"></div>
+        <p class="hint">Forgot the password? <a href="#" id="w-forget">Erase all wallets on this device</a> and restore from your seed phrases.</p>
+      </div>
+
+      <!-- global reset ceremony (spec §5, locked screen only): lists every
+           wallet's name, armed only by a typed ERASE — one stray click must
+           never wipe a device. deleteAllRecords() → none state. -->
+      <div id="w-erase-view" style="display:none">
+        <p class="hint warn-text" style="margin-top:0">This erases every wallet stored in this browser:</p>
+        <ul class="hint" id="w-erase-names" style="margin:0;padding-left:18px"></ul>
+        <p class="hint">Without a wallet's seed phrase (or a keystore file plus its password), its funds are gone forever.</p>
+        <label for="w-erase-input">Type ERASE to confirm</label>
+        <input id="w-erase-input" autocomplete="off" />
+        <div class="grid">
+          <button id="w-erase-go" class="danger" disabled>Erase everything</button>
+          <button id="w-erase-cancel" class="secondary">Cancel</button>
+        </div>
+        <div class="err" id="w-erase-err"></div>
+      </div>
+
+      </div>
+    </div>
+
+    <!-- Wallet switcher (spec §7): opened by clicking the header address chip.
+         List rows switch the active wallet; per-row ⋯ expands inline rename,
+         the keystore-file export (§4) and the remove ceremony; Add wallet
+         reuses the connect modal while the app stays open (§2 modal-mode
+         decoupling). -->
+    <div id="wallet-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Wallets</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <div id="w-wallet-main">
+          <p class="hint" id="w-wallet-note" style="display:none"></p>
+          <div id="w-wallet-list" style="margin-top:10px"></div>
+          <div class="err" id="w-wallet-err"></div>
+          <button id="w-add-wallet">Add wallet</button>
+        </div>
+        <!-- remove ceremony (spec §5): balance + backup warnings, confirmed by
+             typing the wallet's name. Removing the last wallet deletes the
+             whole vault → none state. -->
+        <div id="w-remove-view" style="display:none">
+          <p class="hint" style="margin-top:14px">Removing <strong id="w-remove-target"></strong> from this device.</p>
+          <ul class="hint" id="w-remove-warnings" style="margin:0;padding-left:18px"></ul>
+          <label for="w-remove-name">Type the wallet's name to confirm</label>
+          <input id="w-remove-name" autocomplete="off" />
+          <div class="grid">
+            <button id="w-remove-go" class="danger" disabled>Remove wallet</button>
+            <button id="w-remove-cancel" class="secondary">Cancel</button>
+          </div>
+          <div class="err" id="w-remove-err"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Send modal: one flow, the asset dropdown picks DGB (#6) or DigiDollar (#15) -->
+    <div id="send-modal" class="modal-backdrop asset-dgb">
+      <div class="modal">
+        <div class="modal-head"><h3>Send</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <label for="send-asset">Asset</label>
+        <select id="send-asset">
+          <option value="dgb">DigiByte (DGB)</option>
+          <option value="dd">DigiDollar (USD)</option>
+        </select>
+        <div class="send-forms">
+          <!-- Send DGB (issue #6): built & signed client-side, node only relays -->
+          <div id="w-send">
+            <label for="w-send-to">Recipient address</label>
+            <input id="w-send-to" class="mono" placeholder="dgb…1…" autocomplete="off" autocapitalize="off" spellcheck="false" />
+            <!-- amount header: label + currency toggle (#70) + send-max -->
+            <div class="amt-head">
+              <label for="w-send-amount" id="w-send-amount-label">Amount (DGB)</label>
+              <div class="amt-tools">
+                <button type="button" id="w-send-ccy" class="amt-btn secondary" title="Enter the amount in USD instead">⇄ USD</button>
+                <button type="button" id="w-send-max" class="amt-btn secondary" title="Send the entire spendable balance">Max</button>
+              </div>
+            </div>
+            <input id="w-send-amount" inputmode="decimal" autocomplete="off" />
+            <!-- live conversion of the entered amount into the other currency (#70) -->
+            <div class="hint" id="w-send-amount-eq" style="display:none"></div>
+            <!-- read-only context surfaced from a pasted BIP21 URI (#71) -->
+            <div class="hint" id="w-send-uri-ctx" style="display:none"></div>
+            <button id="w-send-review">Review send</button>
+            <!-- confirmation screen: nothing is signed until "Confirm & send" -->
+            <div id="w-send-confirm" style="display:none">
+              <div class="row"><span class="k">Recipient</span><span class="v mono" id="w-send-c-to" style="word-break:break-all"></span></div>
+              <div class="row"><span class="k">Amount</span><span class="v"><span id="w-send-c-amount"></span> DGB<span id="w-send-c-amount-usd" style="color:var(--muted);font-weight:400"></span></span></div>
+              <div class="row"><span class="k">Network fee</span><span class="v"><span id="w-send-c-fee"></span> DGB</span></div>
+              <!-- decision #54: DGB send with no price feed is warned, not blocked -->
+              <div class="hint warn-text" id="w-send-c-capnote" style="display:none">Couldn’t verify the $500 beta cap — no price feed.</div>
+              <div class="hint warn-text" id="w-send-c-stale" style="display:none"></div>
+              <div class="grid">
+                <button id="w-send-go">Confirm &amp; send</button>
+                <button id="w-send-cancel" class="secondary">Cancel</button>
+              </div>
+            </div>
+            <div class="hint" id="w-send-out"></div>
+            <div class="err" id="w-send-err"></div>
+            <!-- revealed by busy() only on a fragmentation error (#103 decision 2) -->
+            <button id="w-send-err-consolidate" class="secondary" style="display:none">Consolidate coins</button>
+          </div>
+          <!-- Transfer DigiDollar (#15): ships together with Mint and Redeem (ADR-0002) -->
+          <div id="w-transfer">
+            <label for="w-tr-to">Recipient address</label>
+            <input id="w-tr-to" class="mono" placeholder="dgb…1p…" autocomplete="off" autocapitalize="off" spellcheck="false" />
+            <label for="w-tr-amount">Amount (DD)</label>
+            <input id="w-tr-amount" inputmode="decimal" autocomplete="off" placeholder="25" />
+            <button id="w-tr-review">Review transfer</button>
+            <!-- confirmation screen: nothing is signed until "Confirm & transfer" -->
+            <div id="w-tr-confirm" style="display:none">
+              <div class="row"><span class="k">Recipient</span><span class="v mono" id="w-tr-c-to" style="word-break:break-all"></span></div>
+              <div class="row"><span class="k">Sending</span><span class="v">$<span id="w-tr-c-dd"></span></span></div>
+              <div class="row"><span class="k">DigiDollar change</span><span class="v">$<span id="w-tr-c-change"></span></span></div>
+              <div class="row"><span class="k">Network fee</span><span class="v"><span id="w-tr-c-fee"></span> DGB</span></div>
+              <div class="hint warn-text" id="w-tr-c-stale" style="display:none"></div>
+              <div class="grid">
+                <button id="w-tr-go">Confirm &amp; transfer</button>
+                <button id="w-tr-cancel" class="secondary">Cancel</button>
+              </div>
+            </div>
+            <div class="hint" id="w-tr-out"></div>
+            <div class="err" id="w-tr-err"></div>
+            <!-- revealed by busy() only on a fragmentation error (#103 decision 2) -->
+            <button id="w-tr-err-consolidate" class="secondary" style="display:none">Consolidate coins</button>
+          </div>
+        </div>
+        <!-- shown instead of the form once a tx is broadcast -->
+        <div class="tx-success">
+          <svg class="tx-check" width="44" height="44" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M8 12.5l2.6 2.6L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="tx-title"></div>
+          <a class="tx-link mono" target="_blank" rel="noopener"></a>
+          <p class="hint tx-note" style="margin-top:2px"></p>
+          <button data-close>Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Receive modal -->
+    <div id="receive-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Receive</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <!-- backup interception (spec §3, BlueWallet pattern): shown on EVERY
+             open until this wallet passes the quiz. "Continue anyway" swaps in
+             the normal receive view for that open only. -->
+        <div id="w-receive-guard" style="display:none">
+          <p class="warn-text" style="margin:14px 0 4px;font-weight:600">Back up before receiving funds</p>
+          <p class="hint" style="margin-top:0">This wallet's seed phrase is not backed up. If this browser data is lost before you write the words down, any funds you receive are gone.</p>
+          <button id="w-receive-backup">Back up now</button>
+          <button id="w-receive-anyway" class="secondary">Continue anyway</button>
+        </div>
+        <div id="w-receive-body">
+        <!-- One key, two encodings (#72): the tabs switch the FORM the payer's
+             wallet needs, not the address. Both panes render the same
+             derivation, which is why the path, "Next address" and the
+             previous-address list below are shared by them. -->
+        <div class="seg" role="tablist" aria-label="Address form">
+          <button type="button" class="seg-btn on" id="rx-tab-dgb" role="tab" aria-selected="true" aria-controls="rx-pane-dgb">DGB</button>
+          <button type="button" class="seg-btn" id="rx-tab-dd" role="tab" aria-selected="false" aria-controls="rx-pane-dd">DigiDollar</button>
+        </div>
+
+        <div id="rx-pane-dgb" role="tabpanel" aria-labelledby="rx-tab-dgb">
+          <div class="qr" id="w-qr" aria-label="Receive address QR code"></div>
+          <div class="addr-box">
+            <div class="out mono" style="margin-top:0" id="w-address"></div>
+            <button type="button" class="icon-btn" id="w-copy-icon" data-copy="w-address" title="Copy address" aria-label="Copy address"></button>
+          </div>
+          <button id="w-copy">Copy address</button>
+          <!-- Optional BIP21 request amount (#71): when set, the QR and the button
+               below switch to a digibyte:…?amount= URI that mobile wallets scan and
+               prefill. The bare-address copy above stays available. DGB only —
+               there is no URI scheme a DigiDollar sender would honour. -->
+          <label for="w-req-amount" style="margin-top:12px">Request a specific amount (DGB, optional)</label>
+          <input id="w-req-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 12.5" />
+          <div class="grid" style="margin-top:0">
+            <button id="w-copy-uri" class="secondary" style="display:none">Copy payment request</button>
+          </div>
+          <!-- Compatibility twin (#103 decision 1): some senders (older wallets,
+               exchanges) cannot pay taproot dgb1p… addresses. The low-emphasis
+               link reveals the SAME key's P2WPKH twin (dgb1q…, same derivation
+               index — already watched alongside its P2TR, #38), so funds sent to
+               either land in the same balance. Hidden again on every open:
+               the receive view stays taproot-first. -->
+          <p class="hint" style="margin-top:14px">Sending from Coinomi, an exchange, or another wallet that doesn’t support taproot (dgb1p…) addresses?</p>
+          <button id="w-compat-toggle" class="secondary" type="button">Use compatible address</button>
+          <div id="w-compat-section" style="display:none">
+            <p class="hint" style="margin-top:8px">Coinomi, older wallets, and some exchanges cannot send to taproot (dgb1p…) addresses. Use this compatible address instead — it is the same wallet key in the older witness-v0 form, and funds sent here appear in the same balance.</p>
+            <div class="qr" id="w-compat-qr" aria-label="Compatibility address QR code"></div>
+            <div class="out mono" style="margin-top:0" id="w-compat-address"></div>
+            <div class="grid" style="margin-top:0">
+              <button id="w-compat-copy" class="secondary">Copy compatibility address</button>
+              <button id="w-compat-copy-uri" class="secondary" style="display:none">Copy payment request</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Same taproot key, DigiDollar base58check form (DD…/TD…/RD…). Core and
+             mobile wallets can only send DigiDollar to THIS form, not to dgb1p…,
+             so it gets a QR of its own rather than a copy button at the bottom. -->
+        <div id="rx-pane-dd" role="tabpanel" aria-labelledby="rx-tab-dd" style="display:none">
+          <div class="qr" id="w-dd-qr" aria-label="DigiDollar address QR code"></div>
+          <div class="addr-box">
+            <div class="out mono" style="margin-top:0" id="w-dd-address"></div>
+            <button type="button" class="icon-btn" id="w-copy-dd-icon" data-copy="w-dd-address" title="Copy DigiDollar address" aria-label="Copy DigiDollar address"></button>
+          </div>
+          <button id="w-copy-dd">Copy DigiDollar address</button>
+          <p class="hint">The same wallet key in DigiDollar form. Core and mobile wallets send DigiDollar only to a DD… address — they reject the dgb1p… one above. Plain DGB sent here lands in the same balance.</p>
+
+        </div>
+
+        <!-- shared by both forms: they are one address, at one derivation -->
+
+        <!-- Gift key: the RAW x-only owner key behind this address, in its own
+             checksummed ddgift1… envelope. A gifted (mint-to-order) treasury
+             must name this key — an address CANNOT stand in for it: addresses
+             carry the one-way tweak of it, and minting to an address strands
+             the DD at a script no wallet watches. Lives in the SHARED area
+             (visible on both tabs): the receive modal opens on the DGB tab,
+             and a section only on the DigiDollar tab is a section nobody
+             finds (real-user report, 2026-07-27). -->
+        <p class="hint" style="margin-top:14px"><strong>Receiving a gifted treasury?</strong> Give the sender this Gift key — not your address. It is safe to share (it holds no secrets).</p>
+        <div class="addr-box">
+          <div class="out mono" style="margin-top:0" id="w-gift-key"></div>
+          <button type="button" class="icon-btn" id="w-copy-gift-icon" data-copy="w-gift-key" title="Copy Gift key" aria-label="Copy Gift key"></button>
+        </div>
+
+        <div class="row" style="border:0;padding-bottom:0">
+          <span class="k">Address <span class="mono" id="w-path"></span></span>
+          <button id="w-next" class="secondary chip-btn">Next address</button>
+        </div>
+        <button id="w-prev-toggle" class="textlink" type="button">Previously used addresses</button>
+        <div id="w-prev-list" class="rx-prev" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mint modal: Mint DigiDollar (#14), client-signed. Ships together with
+         Transfer and Redeem as one unit (ADR-0002, release gate #17). -->
+    <div id="mint-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Mint DigiDollar</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <div id="w-mint">
+          <label for="w-mint-amount">Amount (DD)</label>
+          <input id="w-mint-amount" inputmode="decimal" autocomplete="off" placeholder="100" />
+          <label for="tier-slider">Lock period — longer lock, less collateral</label>
+          <div class="tier-picker">
+            <!-- the native select stays the source of truth (drivers set .value) -->
+            <select id="w-mint-tier" aria-hidden="true" tabindex="-1"></select>
+            <div class="tier-readout"><span id="tier-name">—</span><span id="tier-ratio"></span></div>
+            <input type="range" id="tier-slider" min="0" max="6" step="1" value="0" aria-label="Lock tier" />
+            <div class="tier-scale"><span>1 hour</span><span>10 years</span></div>
+          </div>
+          <div class="hint" id="mint-estimate"></div>
+          <button id="w-mint-review">Review mint</button>
+          <!-- confirmation screen: nothing is signed until "Confirm & mint" -->
+          <div id="w-mint-confirm" style="display:none">
+            <div class="row"><span class="k">Minting</span><span class="v">$<span id="w-mint-c-dd"></span></span></div>
+            <div class="row"><span class="k">Collateral to lock</span><span class="v"><span id="w-mint-c-coll"></span> DGB</span></div>
+            <div class="row"><span class="k">Collateral ratio</span><span class="v" id="w-mint-c-ratio"></span></div>
+            <div class="row"><span class="k">Oracle price used</span><span class="v" id="w-mint-c-price"></span></div>
+            <div class="row"><span class="k">Network fee</span><span class="v"><span id="w-mint-c-fee"></span> DGB</span></div>
+            <div class="row"><span class="k">Unlocks</span><span class="v" id="w-mint-c-unlock"></span></div>
+            <div class="hint warn-text" id="w-mint-c-stale" style="display:none"></div>
+            <div class="grid">
+              <button id="w-mint-go">Confirm &amp; mint</button>
+              <button id="w-mint-cancel" class="secondary">Cancel</button>
+            </div>
+          </div>
+          <div class="hint" id="w-mint-out"></div>
+          <div class="err" id="w-mint-err"></div>
+          <!-- revealed by busy() only on a fragmentation error (#103 decision 2) -->
+          <button id="w-mint-err-consolidate" class="secondary" style="display:none">Consolidate coins</button>
+        </div>
+        <!-- shown instead of the form once the mint is broadcast -->
+        <div class="tx-success">
+          <svg class="tx-check" width="44" height="44" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M8 12.5l2.6 2.6L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="tx-title"></div>
+          <a class="tx-link mono" target="_blank" rel="noopener"></a>
+          <p class="hint tx-note" style="margin-top:2px"></p>
+          <button data-close>Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Network modal: chain / softfork / oracle detail, plus wallet security -->
+    <div id="net-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Network</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <div class="row"><span class="k">Chain</span><span class="v" id="s-chain">—</span></div>
+        <div class="row"><span class="k">Block height</span><span class="v" id="s-height">—</span></div>
+        <div class="row"><span class="k">DigiDollar softfork</span><span class="v" id="s-dd">—</span></div>
+        <div class="row"><span class="k">Taproot</span><span class="v" id="s-tr">—</span></div>
+        <div class="err" id="s-err"></div>
+        <h2 style="margin-top:18px">Oracle price feed</h2>
+        <div class="row"><span class="k">Consensus</span><span class="v" id="o-consensus">—</span></div>
+        <div class="row"><span class="k">Active oracles</span><span class="v" id="o-active">—</span></div>
+        <div class="oracles" id="o-grid"></div>
+        <div class="hint" id="o-hint"></div>
+        <div id="net-wallet-sec" style="display:none">
+          <h2 style="margin-top:18px">Wallet</h2>
+          <!-- hidden once the active wallet passes the backup quiz -->
+          <button id="w-backup-now">Back up now</button>
+          <button id="w-gh-backup" class="secondary">Back up to GitHub</button>
+          <div class="grid">
+            <button id="w-backup" class="secondary">Show seed phrase</button>
+            <button id="w-lock" class="secondary">Lock wallet</button>
+          </div>
+          <!-- reveal ceremony (spec §5): re-auth gated, blurred decoys until
+               tapped. After reveal w-seed-words holds the REAL words as plain
+               text (numbers are CSS counters) — drivers parse its textContent. -->
+          <div id="w-seed" style="display:none">
+            <p class="hint warn-text">Anyone with these words controls the wallet. Write them down; this is the only backup.</p>
+            <div class="seed-reveal blurred" id="w-seed-reveal">
+              <ol class="seed-grid mono" id="w-seed-words"></ol>
+              <button type="button" id="w-seed-show" class="seed-veil">Tap to reveal</button>
+            </div>
+          </div>
+          <!-- storage persistence (audit C2): whether the browser has promised
+               not to evict this wallet's data under storage pressure -->
+          <div class="row" style="margin-top:14px"><span class="k">Browser storage protection</span><span class="v" id="s-persist">—</span></div>
+          <div class="hint warn-text" id="s-persist-warn" style="display:none">This browser has NOT promised to keep site data — it may erase this wallet under storage pressure, and "clear site data" always will. Back up every wallet's seed phrase.</div>
+          <!-- inactivity auto-lock (spec §5): device-scoped preference in
+               localStorage (minutes, 0 = never) — not in the vault -->
+          <label for="w-autolock">Auto-lock after inactivity</label>
+          <select id="w-autolock">
+            <option value="1">1 minute</option>
+            <option value="5" selected>5 minutes</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="0">Never</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Guided consolidation modal (#103 decision 2): opened ONLY from a
+         "Consolidate coins" offer next to a fragmentation error — never
+         automatically. One reviewed, client-signed self-spend of every
+         confirmed DGB coin (P2WPKH twins included) to the current taproot
+         receive address. Sits AFTER the action modals in the DOM so it stacks
+         over the modal whose error offered it (equal z-index → DOM order), but
+         BEFORE reauth/mainnet-ack, which must stay on top of everything. -->
+    <div id="consolidate-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Consolidate coins</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <div id="w-consolidate">
+          <p class="hint" style="margin-top:0">Your balance is spread across several coins, and the action you tried needs one coin big enough on its own. This merges every confirmed DGB coin into a single coin at your current receive address — only the network fee is spent, the funds stay yours.</p>
+          <div id="w-cons-confirm" style="display:none">
+            <div class="row"><span class="k">Coins merged</span><span class="v" id="w-cons-c-count"></span></div>
+            <div class="row"><span class="k">Consolidated amount</span><span class="v"><span id="w-cons-c-amount"></span> DGB</span></div>
+            <div class="row"><span class="k">To (your address)</span><span class="v mono" id="w-cons-c-to" style="word-break:break-all"></span></div>
+            <div class="row"><span class="k">Network fee</span><span class="v"><span id="w-cons-c-fee"></span> DGB</span></div>
+            <div class="hint warn-text" id="w-cons-c-stale" style="display:none"></div>
+            <div class="grid">
+              <button id="w-cons-go">Confirm &amp; consolidate</button>
+              <button id="w-cons-cancel" class="secondary" data-close>Cancel</button>
+            </div>
+          </div>
+          <div class="err" id="w-cons-err"></div>
+        </div>
+        <!-- shown instead of the form once the consolidation is broadcast -->
+        <div class="tx-success">
+          <svg class="tx-check" width="44" height="44" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M8 12.5l2.6 2.6L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="tx-title"></div>
+          <a class="tx-link mono" target="_blank" rel="noopener"></a>
+          <p class="hint tx-note" style="margin-top:2px"></p>
+          <button data-close>Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Treasury dashboard (FR-2/FR-3): every treasury wallet as a card.
+         Sits after the action modals so it stacks over them; reauth stays on top. -->
+    <div id="treasury-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Treasury wallets</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <p class="hint" style="margin-top:6px">Independent wallets that each lock DGB and mint DigiDollar — created and stored only in this browser.</p>
+        <div id="t-agg" class="out" style="display:none;margin-top:10px;padding:10px 16px">
+          <div class="row" style="border:0;padding:2px 0"><span class="k">Total DGB locked</span><span class="v" id="t-agg-dgb">—</span></div>
+          <div class="row" style="border:0;padding:2px 0"><span class="k">Total DigiDollar minted</span><span class="v">$<span id="t-agg-dd">—</span></span></div>
+          <div class="row" style="border:0;padding:2px 0"><span class="k">Next maturity</span><span class="v" id="t-agg-next">—</span></div>
+        </div>
+        <div class="grid" style="align-items:end">
+          <div><label for="t-search" style="margin-top:10px">Search</label><input id="t-search" placeholder="2036, dd100, a name…" autocomplete="off" /></div>
+          <div><label for="t-sort" style="margin-top:10px">Sort</label><select id="t-sort"><option value="name">Name</option><option value="maturity">Maturity date</option><option value="status">Status</option></select></div>
+        </div>
+        <div id="t-list"></div>
+        <p class="hint" id="t-empty" style="display:none">No treasury wallets yet. Split some DGB into treasuries to see them here.</p>
+        <button id="t-split-open">Split into treasury wallets</button>
+        <!-- RE-ENABLED on the Gift-key construction: the mint names the
+             recipient's RAW x-only owner key, collected as a checksummed
+             ddgift1… Gift key from THEIR wallet's receive screen. Addresses
+             (DD… and …1p alike) are rejected at decode — they carry the
+             one-way tweak of the raw key and minting to one strands the DD
+             (the address-key gift incident). -->
+        <button id="t-gift-open" class="secondary">Gift a locked treasury</button>
+        <button id="t-gh-open" class="secondary">Back up to GitHub</button>
+      </div>
+    </div>
+
+    <!-- Spend DD merchant directory: a read-only listing + votes, fetched
+         fresh on every open. The empty state (launch) is a first-class
+         screen, not an error. Sits with the other dashboard modals. -->
+    <div id="spend-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Spend DigiDollar</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <p class="hint" style="margin-top:6px">Places that accept DD — new coin, growing list.</p>
+        <p class="hint" id="spend-loading" role="status" style="display:none">Loading the directory…</p>
+        <div class="err" id="spend-err"></div>
+        <button id="spend-retry" class="secondary chip-btn" style="display:none">Retry</button>
+        <div id="spend-empty" class="t-card" style="display:none"></div>
+        <div id="spend-list" style="display:none"></div>
+        <p class="hint" id="spend-foot" style="display:none"></p>
+      </div>
+    </div>
+
+    <!-- Split wizard (FR-1): amount → size → names → review → progress.
+         One decision per screen; the batch engine (treasury-engine.js) drives
+         the progress step and survives a browser close. -->
+    <div id="split-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Split into treasury wallets</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <!-- a previous batch left unfinished — truthful resume, never a silent restart -->
+        <div id="sp-resume" style="display:none">
+          <p class="hint warn-text" style="margin-top:6px">A previous split didn’t finish: <span id="sp-resume-text"></span></p>
+          <div class="grid">
+            <button id="sp-resume-go">Resume it</button>
+            <button id="sp-resume-discard" class="secondary">Start over</button>
+          </div>
+        </div>
+        <div id="sp-step-1" style="display:none">
+          <!-- Dollars first (spec §6), BUDGET semantics (user decision
+               2026-07-27): lead with what they HAVE (total DGB = $USD), then
+               ask how much of that value to deploy. Each $100-DD treasury
+               consumes ≈ $203 of DGB (double collateral, protocol tiers) plus
+               small fees — the $100 mint minimum is the protocol's floor. -->
+          <div class="out" id="sp-total" style="margin-top:6px"></div>
+          <label for="sp-amount">How much TOTAL USD would you like to use for one or more treasuries?</label>
+          <input id="sp-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 450" />
+          <div class="hint">Each treasury mints a minimum of <strong>$100 DigiDollar</strong> and uses about <strong>double that</strong> in DGB as its locked collateral — so plan ≈ $205 of your balance per $100 treasury (exact numbers on the next step).</div>
+          <div class="hint" id="sp-avail"></div>
+          <div class="hint" id="sp-amount-eq"></div>
+          <details class="adv" style="margin-top:10px"><summary class="hint">Advanced</summary>
+            <label for="sp-fee-reserve">Fee pocket per treasury (DGB) — pays future network fees</label>
+            <input id="sp-fee-reserve" inputmode="decimal" value="0.5" autocomplete="off" />
+          </details>
+          <div class="err" id="sp-err-1"></div>
+          <button id="sp-next-1">Continue</button>
+        </div>
+        <div id="sp-step-2" style="display:none">
+          <label for="sp-dd">DigiDollar per treasury</label>
+          <select id="sp-dd">
+            <option value="100" selected>$100 — the minimum</option>
+            <option value="150">$150</option>
+            <option value="200">$200</option>
+            <option value="250">$250</option>
+            <option value="400">$400</option>
+          </select>
+          <details class="adv" style="margin-top:10px"><summary class="hint">Advanced: lock period</summary>
+            <label for="sp-tier">Lock period — longer lock, less collateral</label>
+            <select id="sp-tier"></select>
+          </details>
+          <div class="out" id="sp-preview" style="margin-top:12px"></div>
+          <div class="err" id="sp-err-2"></div>
+          <div class="grid">
+            <button id="sp-next-2">Continue</button>
+            <button id="sp-back-2" class="secondary">Back</button>
+          </div>
+        </div>
+        <div id="sp-step-3" style="display:none">
+          <p class="hint" style="margin-top:6px">Name your treasuries. The suggested names say the amount and maturity date at a glance — edit any of them; the structured name is always kept for backups.</p>
+          <div id="sp-names"></div>
+          <div class="err" id="sp-err-3"></div>
+          <div class="grid">
+            <button id="sp-next-3">Continue</button>
+            <button id="sp-back-3" class="secondary">Back</button>
+          </div>
+        </div>
+        <div id="sp-step-4" style="display:none">
+          <p class="hint" id="sp-review" style="margin-top:6px"></p>
+          <div class="err" id="sp-err-4"></div>
+          <div class="grid">
+            <button id="sp-create">Create treasuries</button>
+            <button id="sp-back-4" class="secondary">Back</button>
+          </div>
+        </div>
+        <div id="sp-progress" style="display:none">
+          <p class="hint" id="sp-progress-title" style="margin-top:6px"></p>
+          <div id="sp-progress-list" style="margin-top:8px"></div>
+          <div class="err" id="sp-err-5"></div>
+          <button id="sp-abort" class="secondary">Pause the rest</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Treasury handover (FR-7): re-encrypted export + receipt + remove -->
+    <div id="handover-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Transfer treasury</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <div id="ho-step-1">
+          <p class="hint warn-text" style="margin-top:6px">Transferring gives the other person full control of <strong id="ho-name"></strong> — its locked DGB and its DigiDollar. This cannot be undone on-chain.</p>
+          <p class="hint">Honest warning: deleting your copy afterwards does not prove you forgot the keys — a seller could keep a copy of the backup words. Private sales need trust, escrow, or a legal agreement.</p>
+          <label for="ho-pass">One-time transfer passphrase — share it with the buyer over a separate channel</label>
+          <input id="ho-pass" type="password" autocomplete="new-password" />
+          <label for="ho-pass2">Repeat the transfer passphrase</label>
+          <input id="ho-pass2" type="password" autocomplete="new-password" />
+          <div class="err" id="ho-err"></div>
+          <button id="ho-export">Download the transfer package</button>
+          <button id="ho-export-raw" class="secondary">Use my master password instead</button>
+        </div>
+        <div id="ho-step-2" style="display:none">
+          <p class="hint" id="ho-done-text" style="margin-top:6px"></p>
+          <button id="ho-remove" class="danger">Handover done — remove from this device…</button>
+          <button id="ho-keep" class="secondary" data-close>Keep it for now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- GitHub encrypted backup (FR-8). Only already-encrypted bytes ever
+         leave the browser; the token lives in local storage and goes only to
+         api.github.com. -->
+    <div id="gh-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Back up to GitHub</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <p class="hint" style="margin-top:6px">Your wallets are encrypted on this device before upload. GitHub only ever stores scrambled data — never your words, keys, or password.</p>
+        <div id="gh-setup">
+          <p class="hint">1. Create a <strong>private</strong> GitHub repository (e.g. dgb-treasury-backups). 2. Create a fine-grained access token limited to that one repository with <strong>Contents: Read and write</strong> (set an expiry and renew it when it lapses). 3. Paste the details here.</p>
+          <label for="gh-owner">Repository owner</label>
+          <input id="gh-owner" autocomplete="off" placeholder="your-github-name" />
+          <label for="gh-repo">Repository name</label>
+          <input id="gh-repo" autocomplete="off" placeholder="dgb-treasury-backups" />
+          <label for="gh-token">Access token</label>
+          <input id="gh-token" type="password" autocomplete="off" />
+          <div class="err" id="gh-err"></div>
+          <button id="gh-connect">Connect</button>
+        </div>
+        <div id="gh-connected" style="display:none">
+          <div class="row"><span class="k">Repository</span><span class="v mono" id="gh-target"></span></div>
+          <div class="row"><span class="k">Token</span><span class="v">saved in this browser only</span></div>
+          <div class="hint" id="gh-status" style="margin-top:6px"></div>
+          <div class="err" id="gh-sync-err"></div>
+          <button id="gh-sync">Sync now</button>
+          <button id="gh-forget" class="secondary">Forget token</button>
+          <p class="hint warn-text">Keep the repository private forever — even encrypted, treat it as sensitive; if it is ever made public, move the funds to new wallets. A GitHub backup protects against device loss, NOT a forgotten password — your written seed words are the ultimate backup.</p>
+        </div>
+        <!-- restore mode (FR-8.6): opened from the connect screen's
+             "Restore from GitHub" on a fresh browser -->
+        <div id="gh-restore" style="display:none">
+          <div id="gh-restore-list" style="margin-top:8px"></div>
+          <label for="gh-restore-pass">Password for the backup file</label>
+          <input id="gh-restore-pass" type="password" autocomplete="off" />
+          <!-- fresh-browser restore must also CREATE the vault, which needs a
+               new device master password — the connect form's own fields are
+               unreachable behind this modal (live incident: restore died on a
+               misleading "at least 8 characters" from the hidden w-create-pass) -->
+          <div id="gh-restore-mpass-fields" style="display:none">
+            <label for="gh-restore-mpass">Master password <span class="hint" style="display:inline">— new, for this device: one password for every wallet stored here</span></label>
+            <input id="gh-restore-mpass" type="password" autocomplete="new-password" />
+            <label for="gh-restore-mpass2">Repeat master password</label>
+            <input id="gh-restore-mpass2" type="password" autocomplete="new-password" />
+          </div>
+          <div class="err" id="gh-restore-err"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mint-to-order gift flow: mint a locked treasury FOR someone else —
+         they own it from the first block; the giver keeps nothing. -->
+    <div id="gift-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Gift a locked treasury</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <div id="gf-form">
+          <p class="hint" style="margin-top:6px">Your DGB funds it, but the recipient owns it from the first block: only they can ever unlock it — you keep nothing and cannot undo it. Perfect for gifts and wills with a date attached.</p>
+          <label for="gf-to">Recipient's Gift key — in their wallet it's at the bottom of the Receive window, under "Receiving a gifted treasury?"</label>
+          <input id="gf-to" class="mono" placeholder="ddgift1…" autocomplete="off" autocapitalize="off" spellcheck="false" />
+          <p class="hint">A Gift key is not an address — an address cannot receive a gifted treasury. Ask the recipient to copy their ddgift1… code from their own wallet.</p>
+          <label for="gf-dd">DigiDollar to mint for them</label>
+          <select id="gf-dd">
+            <option value="100" selected>$100 — the minimum</option>
+            <option value="150">$150</option>
+            <option value="200">$200</option>
+            <option value="250">$250</option>
+            <option value="400">$400</option>
+          </select>
+          <details class="adv" style="margin-top:10px"><summary class="hint">Advanced: lock period</summary>
+            <label for="gf-tier">Lock period — longer lock, less collateral</label>
+            <select id="gf-tier"></select>
+          </details>
+          <div class="hint" id="gf-estimate" style="margin-top:6px"></div>
+          <button id="gf-review">Review gift</button>
+          <div id="gf-confirm" style="display:none">
+            <div class="row"><span class="k">Recipient</span><span class="v mono" id="gf-c-to" style="word-break:break-all"></span></div>
+            <div class="row"><span class="k">Minting for them</span><span class="v">$<span id="gf-c-dd"></span> DigiDollar</span></div>
+            <div class="row"><span class="k">Your DGB locked in it</span><span class="v"><span id="gf-c-coll"></span> DGB</span></div>
+            <div class="row"><span class="k">Unlocks for them</span><span class="v" id="gf-c-unlock"></span></div>
+            <div class="row"><span class="k">Network fee</span><span class="v"><span id="gf-c-fee"></span> DGB</span></div>
+            <!-- shown when the balance is fragmented: consolidation is folded
+                 into the plan as step 1, not punted to a separate errand -->
+            <p class="hint warn-text" id="gf-c-cons" style="display:none"></p>
+            <p class="hint warn-text">Irreversible: from the first block, only the recipient can unlock this. They will also need a little DGB (~0.5) of their own later to pay redemption fees.</p>
+            <div class="grid">
+              <button id="gf-go">Confirm &amp; gift</button>
+              <button id="gf-cancel" class="secondary">Cancel</button>
+            </div>
+          </div>
+          <div class="hint" id="gf-out"></div>
+          <div class="err" id="gf-err"></div>
+        </div>
+        <div class="tx-success">
+          <svg class="tx-check" width="44" height="44" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M8 12.5l2.6 2.6L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="tx-title"></div>
+          <a class="tx-link mono" target="_blank" rel="noopener"></a>
+          <p class="hint tx-note" style="margin-top:2px"></p>
+          <button id="gf-note" class="secondary">Download the gift note</button>
+          <button data-close>Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FR-4 integrity guard: spending DD out of a treasury wallet is a
+         hard warning, not a silent send. Override is logged in metadata. -->
+    <div id="t-guard-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>This breaks the treasury</h3></div>
+        <p class="hint warn-text" style="margin-top:6px">Spending this DigiDollar breaks <strong id="t-guard-name"></strong>: without its DD, the locked DGB cannot be redeemed at maturity — someone would have to buy the DD back first.</p>
+        <p class="hint">If you go ahead, the move is recorded so a future buyer can see the DD was moved.</p>
+        <div class="grid">
+          <button id="t-guard-go" class="danger">Spend it anyway</button>
+          <button id="t-guard-cancel" class="secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Password re-auth (spec §5): small gate reused by seed reveal, backup
+         re-entry and the keystore-file export. Remove-wallet has its own
+         type-the-name ceremony instead.
+         Deliberately NOT in the backdrop-click list handled by data-close:
+         cancel must settle the pending promise, so it has its own handlers. -->
+    <div id="reauth-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Confirm your password</h3><button id="reauth-cancel" class="secondary chip-btn">Cancel</button></div>
+        <p class="hint" id="reauth-hint" style="margin-bottom:0"></p>
+        <label for="reauth-pass">Master password</label>
+        <input id="reauth-pass" type="password" autocomplete="current-password" />
+        <button id="reauth-go">Continue</button>
+        <div class="err" id="reauth-err"></div>
+      </div>
+    </div>
+
+    <!-- Mainnet beta interstitial (#54/#63): one-time BLOCKING ack on first
+         mainnet use, persisted in localStorage. Deliberately NOT in the
+         backdrop-click-to-close list and carries no [data-close]: the only
+         ways forward are the two buttons, and Cancel keeps the wallet blocked. -->
+    <div id="mainnet-ack-modal" class="modal-backdrop">
+      <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="mainnet-ack-title">
+        <div class="modal-head"><h3 id="mainnet-ack-title">Real money ahead</h3></div>
+        <div class="disclaimer-body" style="margin-top:14px">
+          <p>You’re about to use the DigiDollar mainnet wallet with <strong>real funds</strong>.</p>
+          <ul>
+            <li>Beta software, “as is”, no warranty; may contain bugs that lose funds.</li>
+            <li>Keys live only in this browser. Back up each wallet's seed phrase (Network → Back up now) — clearing browser data or losing this device without a backup means the funds are gone.</li>
+            <li>During beta, transactions are capped at $500 each.</li>
+            <li>You bear all risk. Authors accept no liability.</li>
+          </ul>
+        </div>
+        <div class="grid">
+          <button id="mainnet-ack-continue">I understand — continue</button>
+          <button id="mainnet-ack-cancel" class="secondary">Cancel</button>
+        </div>
+        <p class="hint warn-text" id="mainnet-ack-note" style="display:none">The wallet stays blocked until you accept the risks above.</p>
+      </div>
+    </div>
+
+    <!-- Disclaimer modal: demo/educational, no warranty, user bears all risk (#79) -->
+    <div id="disclaimer-modal" class="modal-backdrop">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="disclaimer-title">
+        <div class="modal-head"><h3 id="disclaimer-title">Disclaimer</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <div class="disclaimer-body" style="margin-top:14px">
+          <p>DGBclick Wallet is provided <strong>for demonstration and educational purposes only</strong>. It is not a commercial product or a custodial service.</p>
+          <p>The software is provided <strong>“as is”, with no warranty of any kind</strong>, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement.</p>
+          <p><strong>You bear all risk.</strong> This includes, without limitation, loss of funds arising from bugs, mistakes, misconfiguration, key loss, or network failures. The authors accept no liability for any loss or damage.</p>
+          <p>Your keys are generated in your browser and never leave it. <strong>If you lose your keys or seed phrase, no one — including the authors — can recover your funds.</strong></p>
+          <p>Nothing here is financial, legal, or tax advice. See the <a href="https://github.com/usascholar/dgbclick-wallet/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT license</a> for the full terms.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Legacy mint calculator: hidden, kept alive — the c-* inputs stay the
+         oracle-seeded source for the mint estimate and drivers still set them -->
+    <div id="calc-legacy" style="display:none" aria-hidden="true">
+      <label for="c-amount">DigiDollar to mint (USD)</label>
+      <input id="c-amount" type="number" min="0" step="1" value="100" />
+      <label for="c-tier">Lock period</label>
+      <select id="c-tier"></select>
+      <label for="c-price">DGB price (USD) <span id="c-pricesrc" class="hint" style="display:inline"></span></label>
+      <input id="c-price" type="number" min="0" step="0.0001" value="0.01342" />
+      <div class="row"><span class="k">Collateral ratio</span><span class="v" id="r-ratio">—</span></div>
+      <div class="row"><span class="k">Collateral (USD)</span><span class="v" id="r-usd">—</span></div>
+      <div class="row"><span class="k">DGB to lock</span><span class="big"><span id="r-dgb">—</span> <small>DGB</small></span></div>
+    </div>
+  </main>
+
+  <footer class="site">
+    <p class="disclaimer-line">DGBclick Wallet is a demonstration &amp; educational wallet — no warranty, you bear all risk. <button type="button" id="footer-disclaimer" class="linklike">Read the full disclaimer</button></p>
+    <p class="disclaimer-line">Built on the open-source <a href="https://github.com/tonymorony/diginaut-wallet" target="_blank" rel="noopener noreferrer">diginaut-wallet</a>.</p>
+    <p class="version-line"><span id="app-version"></span></p>
+    <a class="gh-link" href="https://github.com/usascholar/dgbclick-wallet" target="_blank" rel="noopener noreferrer" aria-label="Source code on GitHub" title="Source code on GitHub"><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+  </footer>
+
+
+  <script type="importmap">
+  {
+    "imports": {
+      "@noble/curves/": "/vendor/@noble/curves/",
+      "@noble/hashes/": "/vendor/@noble/hashes/",
+      "@scure/base": "/vendor/@scure/base/index.js",
+      "@scure/bip32": "/vendor/@scure/bip32/index.js",
+      "@scure/bip39": "/vendor/@scure/bip39/index.js",
+      "@scure/bip39/wordlists/": "/vendor/@scure/bip39/wordlists/",
+      "qrcode-generator": "/vendor/qrcode-generator/qrcode.mjs"
+    }
+  }
+  </script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

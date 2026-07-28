@@ -1,0 +1,20 @@
+{
+  "name": "@diginaut/wallet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DigiDollar wallet web app — dashboard, calculator, RPC allow-list proxy",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "vendor:lock": "node scripts/gen-vendor-lock.mjs"
+  },
+  "dependencies": {
+    "digidollar-js": "0.1.0",
+    "qrcode-generator": "2.0.4"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
