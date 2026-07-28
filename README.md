@@ -1,47 +1,172 @@
 <p align="center">
-  <img src="docs/diginaut-mascot.png" alt="Diginaut" width="180" />
+  <img src="docs/diginaut-mascot.png" alt="DGBclick Wallet" width="180" />
 </p>
 
 <h1 align="center">DGBclick Wallet</h1>
 
-A **non-custodial, browser-based wallet** for [DigiByte](https://digibyte.org)'s **DigiDollar**
-stablecoin. DGBclick Wallet lets a newcomer create a wallet, send and receive DGB, and mint, transfer,
-and redeem DigiDollar — **without running their own node, and without anyone else ever holding
-their keys.**
+<p align="center"><b>Money that answers to you — and only you.</b></p>
+
+## In plain words
+
+DGBclick Wallet is a website that works like a bank account **you** fully own — for digital
+money. You can hold DigiByte (DGB), turn it into **DigiDollar** (a coin built to stay worth
+$1), lock savings for a period you choose, gift them to someone you love, and spend them at
+real merchants.
+
+- **No signup, no app store, no permission slip.** Open the site, make a wallet in seconds.
+- **Only you hold the keys.** They are created on your device and never leave it. There is
+  no company behind the curtain that can touch your balance.
+- **Everything on this page is the exact code the website runs.** You don't have to trust
+  it — you can check it.
+
+👉 **Just want to use it? Go to [wallet.dgbclick.com](https://wallet.dgbclick.com) —
+you never need anything else on this page.** (Want to practice first with play money?
+See [Try it](#try-it) below.)
+
+<p align="center">
+  <img src="docs/screenshots/start-screen.png" alt="Welcome screen — keys are generated in your browser and never leave it" width="240" />
+  &nbsp;
+  <img src="docs/screenshots/get-started-imports.png" alt="Create a wallet, restore a seed or backup, or import from DigiByte Core" width="240" />
+  &nbsp;
+  <img src="docs/screenshots/wallet-dashboard.png" alt="The wallet dashboard — DGB and DigiDollar, Send, Receive, Mint, Treasuries, Spend DD" width="240" />
+</p>
+
+<p align="center"><i>Thirty seconds from opening the site to holding your own keys — and every<br/>
+feature (Send, Receive, Mint, Treasuries, Spend DD) one tap from the balance.</i></p>
+
+## Why this wallet exists
+
+Money is the shape your effort takes. You trade your hours, your skill, your judgment — and
+money is what you hold the value in until you choose to trade it back. That only works when
+money is **yours**: earned, kept, and spent **by consent** — value for value, never by
+decree.
+
+But look at what "your" money usually is. A balance at a bank is an IOU that a stranger can
+freeze. A currency is a promise that someone else dilutes, printing away the hours you
+already traded. A payment app is a gatekeeper that can say no — to a purchase, to a person,
+to a country. Somewhere along the way we accepted that holding money means asking
+permission.
+
+It doesn't have to.
+
+This wallet is built on a simple conviction: **the person who earned the money is the only
+person who should have a say over it.** Not a better bank — no bank. Not a nicer gatekeeper —
+no gate. Just you, your keys, and arithmetic that treats everyone exactly the same, whether
+they move ten dollars or ten million.
+
+When someone tells you that your money should answer to them, they are telling you what they
+plan to do with it. This wallet is the alternative: money that keeps its promises because no
+one can make it break them.
+
+## What you can do with it
+
+### 🔑 Hold money that's actually yours
+
+If someone else can say no, it was never yours. Your wallet is a seed phrase — twelve words
+that exist only with you. No account to close, no balance to freeze, no terms of service
+standing between you and what you earned. Lose the device? Your words restore everything,
+anywhere on Earth, in seconds.
+
+### ⚡ Send value without asking anyone
+
+A father wiring money home shouldn't pay a toll to three companies and wait three days for
+the privilege. Sending DGB settles in seconds, for a fraction of a cent, to any person on
+the planet with a phone — on a Sunday, across a border, at 3 a.m. No business hours. No
+"pending review." The network doesn't care who you are, and that's the point.
+
+### 💵 Make your money steady — without a bank
+
+Saving in a currency that melts is running up a down escalator. **DigiDollar** is DigiByte's
+decentralized stablecoin: you mint it by locking DGB as collateral, and it's built to hold
+$1 of value — not because a company promises there's a dollar in a vault somewhere, but
+because the collateral and the rules are enforced by the network itself, in the open. Your
+paycheck, your prices, your plans — steady. No bank account required.
+
+### 🔒 Save with a lock *you* set
+
+Everyone knows the person who dips into savings "just this once." Sometimes it's us.
+**Treasury vaults** turn a promise into arithmetic: lock DGB for a month, a year, ten years —
+and the network itself refuses to release it early. Not a penalty fee you can pay to break
+your word. A door with no handle until the day you chose.
+
+- The college fund that survives every emergency but the real one.
+- The house deposit that can't become a vacation.
+- The retirement money your future self will thank you for — because your present self
+  couldn't touch it.
+
+Split your savings into as many independent vaults as you like — one per goal, one per
+child, one per dream — each with its own date, each minting its own steady DigiDollar.
+
+### 🎁 Give a gift no one can take back
+
+Ordinary gifts of money come with invisible strings: a bank that can reverse it, an app that
+can claw it back, a parent who means well. A **gift key** is different — the moment it's
+created, the vault belongs to the recipient, locked until the date *you* set, and not even
+you can undo it. A graduation fund that opens at eighteen. A wedding gift that waits for the
+first home. A head start for someone you believe in — delivered as twelve words on paper,
+with no middleman in between.
+
+### 🛍️ Spend it in the real world
+
+Money you can't spend is a collectible. The built-in **Spend DD directory** lists merchants
+who take DigiDollar directly — paid in stable value, settled in seconds, with no card
+network skimming three percent off someone else's honest work. Every merchant on that list
+is someone trading value for value, the way money was meant to move.
+
+## Why you can trust it
+
+Trust should be something you verify, not something you're asked for.
+
+- **Your keys never leave your device.** Every transaction is built and signed in your
+  browser; the servers only ever see data that's already public.
+- **The code here is the code that runs.** This repository is a reviewed snapshot of exactly
+  what serves [wallet.dgbclick.com](https://wallet.dgbclick.com).
+- **Tested against the network itself.** Before any fund-moving code ships, its transactions
+  must match DigiByte Core's byte-for-byte — proven, not promised.
+- **Audited for hostile conditions** — hostile browsers, dropped connections, malicious
+  infrastructure — and the findings are public in [AUDIT.md](AUDIT.md).
+
+No signup. No custody. No permission. Just money that works the way you do.
+
+## Try it
+
+- **The real thing:** <https://wallet.dgbclick.com> — mainnet, real funds, real DigiDollar
+  (active on DigiByte mainnet since block 23,869,440; backed by a DigiByte Core **v9.26.5**
+  node).
+- **Practice with play money:** <https://dgb.ludere.space> — a permanent **testnet**
+  instance. Create a wallet, claim free valueless test DGB from the built-in faucet, and run
+  the full mint / lock / gift / redeem cycle end-to-end.
+- **The upstream author's instance:** <https://diginaut.ludere.space> — the project this
+  fork builds on.
+- **Run your own:** everything you need is in this repo — see
+  [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md). Money that answers to you can also be
+  *served* by you.
+
+> DigiDollar minting is a DigiByte softfork. On testnet it is already active; on mainnet it
+> activates network-wide at the softfork block. DGBclick Wallet enables the mint flow
+> automatically once the node it talks to reports DigiDollar active — the same build serves
+> every network.
+
+---
+
+## For developers
+
+A **non-custodial, browser-based wallet** for [DigiByte](https://digibyte.org)'s
+**DigiDollar** stablecoin: create a wallet, send and receive DGB, and mint, transfer, and
+redeem DigiDollar — **without running a node, and without anyone else ever holding the
+keys.** This fork adds **Treasury Wallets** — split DGB into many independent, time-locked,
+individually giftable vaults ([spec](docs/treasury-wallets-spec.md),
+[use cases](docs/treasury-use-cases.md)) — including **trustless gifting at creation** via
+Gift keys (the recipient owns the position from its first block; Core-wallet recipients are
+first-class, [proven on regtest](docs/discovery/core-recipient-gift-findings.md)), a
+resumable self-retrying batch engine, server-push block events, and encrypted GitHub
+backup/restore.
 
 > Built on the open-source [diginaut-wallet](https://github.com/tonymorony/diginaut-wallet) by Anton Lysakov (MIT).
 >
 > This public repository receives **reviewed release snapshots** — development happens in a
 > private repository, and each release here is a sanitized copy of exactly what runs at
 > [wallet.dgbclick.com](https://wallet.dgbclick.com). Issues and PRs are welcome against this repo.
-
-DigiDollar is DigiByte's decentralized, USD-pegged stablecoin: you mint it by locking DGB as
-collateral for a chosen lock period, and redeem it to release that collateral. DGBclick Wallet builds and
-signs every consensus transaction in your browser.
-
-> **This fork** adds **Treasury Wallets**: split DGB into many independent, time-locked,
-> individually giftable vaults, each minting $100+ of DigiDollar
-> ([spec](docs/treasury-wallets-spec.md), [use cases](docs/treasury-use-cases.md)) — including
-> **trustless gifting at creation** via Gift keys (the recipient owns the position from its
-> first block; Core-wallet recipients are first-class,
-> [proven on regtest](docs/discovery/core-recipient-gift-findings.md)), a resumable
-> self-retrying batch engine, server-push block events, and encrypted GitHub backup/restore.
-> It is also hardened for hostile browser and network conditions ([AUDIT.md](AUDIT.md)) and
-> runs live on **mainnet** at **<https://wallet.dgbclick.com>**, backed by its own DigiByte
-> Core **v9.26.5** node (DigiDollar active on mainnet since block 23,869,440). Upstream
-> project: [tonymorony/diginaut-wallet](https://github.com/tonymorony/diginaut-wallet).
-
-**Try it: <https://wallet.dgbclick.com>** (this fork, mainnet — real funds), or the upstream
-author's instance at <https://diginaut.ludere.space> — create a wallet in seconds and explore the full
-dashboard, mint calculator, and send/receive flows. A permanent **testnet instance at
-<https://dgb.ludere.space>** lets you exercise the complete mint / transfer / redeem cycle with
-valueless coins: create a wallet, claim testnet DGB from the built-in faucet, and mint DigiDollar
-end-to-end. Both run the full stack in this repo against a DigiByte Core **v9.26.4** node with a
-real oracle price feed. Want to host your own? See [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md).
-
-> DigiDollar minting is a DigiByte softfork. On testnet it is already active; on mainnet it
-> activates network-wide at the softfork block. DGBclick Wallet enables the mint flow automatically once
-> the node it talks to reports DigiDollar active — the same build serves every network.
 
 ## How it works
 
@@ -129,9 +254,9 @@ dual-network deployment names the exact build it runs: `curl -s <domain>/api/con
 
 ## License
 
-[MIT](LICENSE) © Anton Lysakov. All packages in this monorepo are MIT-licensed; the
-publishable `digidollar-js` library carries its own copy of the license. Third-party
-dependencies (`@noble/*`, `@scure/*`, `qrcode-generator`) are MIT.
+[MIT](LICENSE) © Anton Lysakov and DGBclick (dgbclick.com). All packages in this monorepo are
+MIT-licensed; the publishable `digidollar-js` library carries its own copy of the license.
+Third-party dependencies (`@noble/*`, `@scure/*`, `qrcode-generator`) are MIT.
 
 This software is provided for demonstration and educational purposes, **as is** and without
 warranty of any kind (see the license). You are solely responsible for any funds or keys you
