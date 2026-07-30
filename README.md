@@ -34,6 +34,55 @@ See [Try it](#try-it) below.)
 <p align="center"><i>Thirty seconds from opening the site to holding your own keys, and every<br/>
 feature (Send, Receive, Mint, Treasuries, Spend DD) one tap from the balance.</i></p>
 
+## From Diginaut to DGBclick Wallet
+
+This project began as the open-source [Diginaut](https://github.com/tonymorony/diginaut-wallet)
+wallet. We rebuilt it into something faster, safer, and built for real people. What changed:
+
+**🎨 New identity**
+- Rebranded to DGBclick Wallet: new logo, astronaut mascot, loading animation, and a
+  newcomer-friendly README with screenshots.
+
+**🚀 Faster**
+- Cut login network requests by roughly 10x (445 down to 35 on a multi-chain wallet) with a
+  bulk indexer endpoint: one request per wallet instead of 2 to 4 per address.
+- Multi-chain logins that used to take over a minute now open in seconds: pooled ElectrumX
+  sessions, a fixed O(n²) response parser, and a transaction cache.
+- Address-level caching so the wallet stops re-scanning every chain on every login.
+
+**🐛 Bugs fixed (caught in real mainnet use, fixed same day)**
+- Invisible funds: coins on imported DigiByte Core chains now always appear (gap-limit
+  discovery on every chain).
+- Balance double-counting fixed (one coin was being counted twice across descriptor chains).
+- Transactions now flip from "pending" to "confirmed" correctly (some were stuck past 24
+  confirmations).
+- Redeem and mint no longer strand themselves on a wallet holding a single coin.
+- Fixed a crash when minting from a split treasury.
+- Deploy restarts no longer flash a scary error at logged-in users.
+- Phones stopped running days-old cached code.
+
+**✨ New features**
+- Treasury Wallets: split DGB into many independent, time-locked, individually giftable vaults.
+- Gift keys: trustless gifting at creation. The recipient owns the vault from its first block,
+  and DigiByte Core wallets can receive gifts too (proven on regtest).
+- Redeem auto-gather: the wallet moves your own DigiDollar into place for a redemption in one
+  click, with no manual transfers.
+- Import from DigiByte Core: bring in a Core descriptor wallet.
+- Spend DD directory: a merchant marketplace you can update without a code deploy.
+- Encrypted backup and restore to a private GitHub repo.
+- A resumable, self-retrying batch engine that survives closed tabs and dropped connections.
+
+**🔒 Security and reliability**
+- Passed an outside-attacker security audit and fixed every finding (rate-limit spoofing,
+  error-message leaks, memory exhaustion, network-bind hardening, and more).
+- Runs on its own DigiByte node, ElectrumX, and indexer: no third-party service dependency.
+- Server-push block events, retry ladders, and honest error states throughout.
+- Private vulnerability reporting and a published security policy.
+
+**🏗️ Infrastructure**
+- Live at [wallet.dgbclick.com](https://wallet.dgbclick.com) (mainnet) with a beta staging site.
+- Continuous integration; the public code is a reviewed snapshot of exactly what runs live.
+
 ## Why this wallet exists
 
 Money is the shape your effort takes. You trade your hours, your skill, your judgment, and
