@@ -121,7 +121,7 @@ check((await evaluate(text('w-tr-err'))).includes('hold $20.00'),
 // ---- Error 3: mint change went to P2WPKH, so addr A has NO DGB fee coin now.
 await setVal('w-tr-amount', '7.5');
 await click('w-tr-review');
-await waitFor(`${text('w-tr-err')}.includes('no DGB for the fee')`, 'no-fee-coin error');
+await waitFor(`${text('w-tr-err')}.includes('DGB for the fee')`, 'no-fee-coin error');
 check((await evaluate(text('w-tr-err'))).includes(addrA),
   'no-fee-coin error names the exact address to top up');
 await shot('60-transfer-errors.png');

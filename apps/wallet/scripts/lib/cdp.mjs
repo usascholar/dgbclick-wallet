@@ -51,7 +51,10 @@ export async function connectCdp({ port = Number(process.env.CDP_PORT) || 9224, 
         if (await evaluate(guarded)) return;
         await new Promise((r) => setTimeout(r, 150));
       }
-      throw new Error('timeout: ' + label);
+      // Name the condition that never came true. A bare "timeout: <label>" says
+      // nothing about WHY, and these run headless in CI where nobody can look:
+      // diagnosing one cost several blind re-runs before this line existed.
+      throw new Error(`timeout: ${label} — waited ${timeoutMs}ms for: ${expr}`);
     }
     async function shot(name) {
       const { data } = await cdp('Page.captureScreenshot', { format: 'png' }, sessionId);

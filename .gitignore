@@ -18,3 +18,10 @@ deploy/README-digidollar-status.md
 # Keep with the cold-wallet backup, never in the repo.
 RECOVERY.md
 scripts/recovery-position.json
+
+# Python bytecode. A compiled .pyc bakes the ABSOLUTE PATH of the machine that
+# built it into its co_filename constant, so committing one publishes somebody's
+# home directory. One arrived this way from upstream and was staged for the
+# public repo before the pre-publish audit caught it.
+__pycache__/
+*.pyc

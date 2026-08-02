@@ -84,6 +84,12 @@ Development happens on Windows; CI and production run Linux. Known differences:
   timeout. A `setTimeout(120)` that is "obviously long enough" locally becomes a
   flaky failure under CI's parallel load. Poll the file, the DOM node, or the
   API response you actually depend on.
+- **Executable bits do not survive a Windows commit.** Windows has no Unix
+  execute bit, so a shell script added from Windows is recorded `100644` and a
+  Linux runner refuses it with "Permission denied" before it runs. If you add a
+  script meant to be executed, set the bit in git explicitly:
+  `git update-index --chmod=+x scripts/your-script.sh`. Prefer invoking scripts
+  as `bash scripts/x.sh` in CI so the mode cannot break the job at all.
 - **Browser drivers** (`scripts/run-drivers.sh`) need Chrome and are
   platform-sensitive; a few are known to fail on some Windows checkouts. Run the
   unit suite as your gate and treat driver results as advisory locally.

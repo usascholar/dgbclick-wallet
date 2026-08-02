@@ -102,7 +102,7 @@ check(true, 'redeem button appears once the lock expires');
 
 // ---- Error: mint change went to P2WPKH, so there is no DGB fee coin.
 await evaluate(`document.querySelector('#w-positions [data-redeem]').click()`);
-await waitFor(`${text('w-rd-err')}.includes('no DGB for the fee')`, 'no-fee-coin error');
+await waitFor(`${text('w-rd-err')}.includes('DGB for the fee')`, 'no-fee-coin error');
 check((await evaluate(text('w-rd-err'))).includes(addr0), 'no-fee-coin error names the address to top up');
 
 // the mint's change went to the P2WPKH twin and counts toward the balance

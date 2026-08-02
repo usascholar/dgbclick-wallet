@@ -114,6 +114,7 @@ await waitFor(vis('w-backup-view'), 'ceremony for wallet B');
 await click('w-backup-done');
 await waitFor(`!${modalOpen('w-connect-modal')}`, 'ceremony dismissed for wallet B');
 await waitFor(`${text('w-address')} !== ${JSON.stringify(addrA)}`, 'wallet B derives its own address');
+const addrB = await evaluate(text('w-address')); // stable: B is never paid, so its receive index never moves
 await waitFor(`document.getElementById('w-balance').textContent === '0'`, 'wallet B shows its own empty balance', 20_000);
 
 // ---- release wallet A's poll onto wallet B ----
@@ -127,6 +128,7 @@ check(!(await evaluate(`document.getElementById('w-history').innerHTML`)).includ
   "and none of wallet A's transactions appear in wallet B's Activity");
 await b.shot('130-wallet-switch-no-crosstalk.png');
 
+
 // ---- the destructive direction: the remove ceremony reads the same value ----
 // Park empty wallet B's poll, switch to funded wallet A, release B's answer
 // onto A, then open the ceremony that asks whether to delete A.
@@ -137,8 +139,15 @@ await evaluate(`window.__stall = false`);
 await click('w-chip');
 await waitFor(modalOpen('wallet-modal'), 'switcher open again');
 await evaluate(`document.querySelector('#w-wallet-list [data-switch]').click()`); // first row = wallet A
-await waitFor(`${text('w-address')} === ${JSON.stringify(addrA)}`, 'switched back to wallet A');
-await waitFor(`document.getElementById('w-balance').textContent === '5,000'`, 'wallet A repainted', 20_000);
+// Identify wallet A by what is STABLE about it. NOT `w-address === addrA`:
+// A was paid at index 0, so as soon as the receive-chain scan lands,
+// syncReceiveIndex correctly rotates the shown address one past the used one
+// (measured at ~500ms after the switch, permanently). That equality could
+// only hold inside that opening window, so it passed on Windows and timed out
+// on Linux CI — green by luck, not by construction. What is stable: A's
+// address at any index is never B's, and only A holds 5,000 DGB.
+await waitFor(`${text('w-address')} !== ${JSON.stringify(addrB)}`, 'switched off wallet B');
+await waitFor(`document.getElementById('w-balance').textContent === '5,000'`, 'switched back to wallet A, repainted', 20_000);
 await evaluate(`(() => { window.__held.splice(0).forEach((f) => f()); return true; })()`);
 await new Promise((r) => setTimeout(r, 800));
 check((await evaluate(text('w-balance'))) === '5,000',

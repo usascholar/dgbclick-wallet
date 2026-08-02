@@ -82,8 +82,11 @@ jobs:
 
       # scripts/run-drivers.sh owns the ritual these need: a fresh profile per
       # driver, and no survivors between runs.
+      # Invoked through bash, not as ./script: a checkout from a Windows-authored
+      # commit can arrive without the execute bit, and "Permission denied" would
+      # fail this job before a single driver ran.
       - name: run drivers
-        run: ./scripts/run-drivers.sh
+        run: bash scripts/run-drivers.sh
 
       - name: driver logs on failure
         if: failure()
