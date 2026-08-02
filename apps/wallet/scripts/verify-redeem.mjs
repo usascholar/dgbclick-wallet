@@ -1,8 +1,8 @@
 // Drive #16: the Redemption flow through the full real stack. Mint → wait out
 // the CLTV lock → redeem from the position's button → collateral back in the
-// DGB balance. Proves the locked-until state, the no-fee-coin error, the
-// confirmation screen before signing, and the position closing. Setup: same
-// as verify-mint.mjs.
+// DGB balance. Proves the locked-until state, that a mint-change P2WPKH coin
+// is accepted as the redeem fee coin (#38 / 6b1d78a), the confirmation screen
+// before signing, and the position closing. Setup: same as verify-mint.mjs.
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -100,10 +100,18 @@ await nodeRpc('generatetoaddress', [345, miner], 'stand');
 await waitFor(`document.querySelector('#w-positions [data-redeem]') !== null`, 'redeem button appears after expiry');
 check(true, 'redeem button appears once the lock expires');
 
-// ---- Error: mint change went to P2WPKH, so there is no DGB fee coin.
+// ---- Not an error since 6b1d78a: the mint's change is a P2WPKH coin (#38)
+// and the redeem fee leg now accepts an own-key P2WPKH coin, so the redemption
+// plans straight through instead of refusing and demanding a top-up first.
+// This asserted the old refusal until 2026-08-02 and had been failing since
+// 6b1d78a landed, unseen, because the regtest drivers cannot run in CI. The
+// genuine no-fee-coin refusal is still pinned in verify-receive-compat.
 await evaluate(`document.querySelector('#w-positions [data-redeem]').click()`);
-await waitFor(`${text('w-rd-err')}.includes('DGB for the fee')`, 'no-fee-coin error');
-check((await evaluate(text('w-rd-err'))).includes(addr0), 'no-fee-coin error names the address to top up');
+await waitFor(`document.getElementById('w-redeem-confirm').style.display !== 'none'`,
+  'redeem plans on the mint-change fee coin');
+check((await evaluate(text('w-rd-err'))) === '',
+  'no fee-missing error: the mint-change P2WPKH coin is an acceptable fee coin (#38)');
+await click('w-rd-cancel'); // reset so the confirmation flow below starts clean
 
 // the mint's change went to the P2WPKH twin and counts toward the balance
 // (#38), so it is not '1' — wait for the +1 top-up delta instead

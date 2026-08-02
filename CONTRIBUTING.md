@@ -104,6 +104,34 @@ Development happens on Windows; CI and production run Linux. Known differences:
 - Run e2e regtest files **one at a time**; several mining into one node
   concurrently will wedge it.
 
+### Standing up the regtest stack
+
+The regtest drivers (`verify-transfer`, `verify-redeem`, `verify-mint`,
+`verify-send`) need the whole chain: DigiByte Core → ElectrumX → indexer →
+faucet → wallet → headless Chrome. They cannot run in CI, so they are not in
+the default `run-drivers.sh` set and nothing checks them for you. Run them
+before any change to mint, transfer, or redeem.
+
+```bash
+DGB_BIN=/path/to/digibyted scripts/regtest-stand.sh --keep   # node on :18500
+DAEMON_URL=http://dd:ddpass@127.0.0.1:18500 scripts/electrumx-regtest/run.sh
+PORT=8789 DGB_HRP=dgbrt ELECTRUM_HOST=127.0.0.1 ELECTRUM_PORT=50001 node apps/indexer/server.js
+```
+
+Four things cost real time to rediscover, so they are written down here:
+
+- **`DGB_HRP=dgbrt` is mandatory on regtest.** The indexer defaults to `dgbt`
+  (testnet) and hard-rejects any address whose hrp differs. Because money
+  fields are complete-or-absent, the symptom is not an error message but
+  `totalCents` arriving as `undefined` at the caller.
+- **ElectrumX refuses to run as root.** The Dockerfile drops to an
+  unprivileged user; outside Docker, either do the same or set `ALLOW_ROOT=1`.
+- **`plyvel` needs `python3-dev`,** not just `build-essential`. Without the
+  CPython headers the only symptom is `Python.h: No such file or directory`
+  buried in a pip subprocess.
+- **Windows cannot host this stack.** `plyvel` has no Windows wheels. Use WSL2
+  or Linux; the node itself is the only part that runs natively on Windows.
+
 ## What this project will not accept
 
 - Anything that sends a private key, seed, or unencrypted keystore off-device.

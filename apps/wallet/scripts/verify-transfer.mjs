@@ -1,8 +1,9 @@
 // Drive #15: DigiDollar transfer between two wallets through the full real
 // stack. Wallet A mints in the UI, transfers to wallet B's address; the driver
 // then restores wallet B in the same browser and sees the DigiDollar arrive.
-// Also proves the distinct error states: non-taproot recipient, insufficient
-// DigiDollar, and no fee coin on the DD-holding address.
+// Also proves the distinct error states: non-taproot recipient and
+// insufficient DigiDollar, plus that a mint-change P2WPKH coin is accepted as
+// the transfer fee coin (#38 / 6b1d78a) rather than refused.
 // Setup: same as verify-mint.mjs.
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -118,13 +119,22 @@ await waitFor(`${text('w-tr-err')}.includes('insufficient DigiDollar')`, 'insuff
 check((await evaluate(text('w-tr-err'))).includes('hold $20.00'),
   'insufficient-DigiDollar error is specific: sending $100, holding $20');
 
-// ---- Error 3: mint change went to P2WPKH, so addr A has NO DGB fee coin now.
+// ---- Not an error since 6b1d78a: the mint's change is a P2WPKH coin (#38),
+// and the transfer fee leg now accepts an own-key P2WPKH coin. So the review
+// that used to be refused here succeeds, paying the fee from the mint change
+// instead of making the user top up first. This block asserted the old
+// refusal until 2026-08-02 and had been failing since 6b1d78a landed, unseen,
+// because the regtest drivers cannot run in CI. The genuine no-fee-coin
+// refusal is still pinned in verify-receive-compat, where the only coin on
+// the current address is a P2TR one too small to cover the fee.
 await setVal('w-tr-amount', '7.5');
 await click('w-tr-review');
-await waitFor(`${text('w-tr-err')}.includes('DGB for the fee')`, 'no-fee-coin error');
-check((await evaluate(text('w-tr-err'))).includes(addrA),
-  'no-fee-coin error names the exact address to top up');
+await waitFor(`document.getElementById('w-tr-confirm').style.display !== 'none'`,
+  'review succeeds on the mint-change fee coin');
+check((await evaluate(text('w-tr-err'))) === '',
+  'no fee-missing error: the mint-change P2WPKH coin is an acceptable fee coin (#38)');
 await shot('60-transfer-errors.png');
+await click('w-tr-cancel'); // re-enable Review; the entered to/amount survive
 
 // top up the fee coin and mine it. The balance is not '1': the mint's change
 // went to the P2WPKH twin and counts toward it (#38) — wait for the +1 delta.
