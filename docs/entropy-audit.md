@@ -16,6 +16,76 @@ This document explains what this wallet does, what was audited, what was found,
 and, most importantly, **how to verify all of it yourself** rather than taking
 our word for it.
 
+## Why we published this
+
+In July 2026, Coinkite disclosed that a firmware bug had reduced the entropy of
+seeds generated on COLDCARD hardware wallets. We are describing it here because
+it is the clearest possible statement of the problem, and because Coinkite
+described it honestly in their own postmortem. It is quoted, not paraphrased.
+
+The cause was a build-time guard that silently failed to fire. In Coinkite's
+words:
+
+> "During that migration, wallet seed generation moved from `ckcc.rng_bytes()`
+> to `ngu.random.bytes()`. That path resolved `rng_get()` to MicroPython's
+> software fallback instead of COLDCARD's hardware RNG implementation."
+
+> "We defined that macro as zero, so the `#error` did not stop the build."
+
+The result, again by Coinkite's own estimate:
+
+> "On Mk2 and Mk3, the active PRNG was seeded primarily from device and timing
+> state. Under our current attack assumptions, we estimate the effective search
+> space at about 40 bits."
+
+and about 72 bits on later models, against the 128 bits a 12-word seed is
+supposed to carry. They were explicit that this was not academic:
+
+> "For funded wallets with neither the independent dice entropy nor a strong,
+> unique BIP-39 passphrase described above, the reduced search space is a direct
+> security risk, not a theoretical possibility."
+
+Two sentences from that postmortem are the reason this document exists:
+
+> "The COLDCARD source code has always been open and publicly available, so we
+> have to assume that someone used AI to review previous versions of our
+> firmware and stumbled upon this issue."
+
+> "A few weeks ago, we used one of the best available AI models to review our
+> code for security issues, and it did not find this bug or anything serious."
+
+Read that carefully, because it is the whole lesson. The code was public for
+years. It was reviewed, including by a modern AI model, weeks before. The bug
+survived all of it, because **reading code proves what the code says, not what
+the running system does.** The build compiled. The tests passed. The function
+returned bytes that looked random. Nothing was there to check whether the bytes
+actually were.
+
+That is why this wallet does not stop at "our source is open" or "it was
+reviewed." It checks the generator's live output at the moment a key is created,
+and it ships a script that lets you re-run the entire audit yourself, on your
+machine, against the code in front of you.
+
+We take no satisfaction in any of this. Coinkite published a root-cause
+postmortem and shipped fixed firmware for every affected model within about a
+day, which is a better disclosure response than most companies manage. The same
+class of mistake, a fallback that engages silently instead of failing loudly,
+could happen to any project, including this one. That is precisely the argument
+for checks that run at generation time rather than review time.
+
+**Sources** (retrieved 2 August 2026):
+[Coldcard Security Advisory](https://blog.coinkite.com/coldcard-mk3-seed-generation-warning/),
+[Technical Deep Dive into the Entropy Issue](https://blog.coinkite.com/entropy-technical-backgrounder/),
+[Block engineering analysis](https://engineering.block.xyz/blog/predictable-rng-fallback-and-32-bit-reseed-in-coldcard-firmware).
+
+A note on figures, since reporting varied: Coinkite's advisory states no theft
+amount. Third-party analysts including Galaxy Research attributed a series of
+sweeps between 30 July and 1 August 2026, totalling roughly 1,367 BTC across
+several thousand addresses, to wallets affected by this flaw. Those figures are
+theirs, they escalated as analysis continued, and as of this writing no public
+report had reconstructed a specific victim's seed. We state them as attributed,
+not as established cause.
+
 ## The short version
 
 - Keys come from **`crypto.getRandomValues`**, the operating system's
