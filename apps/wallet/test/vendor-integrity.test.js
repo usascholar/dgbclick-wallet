@@ -92,9 +92,24 @@ test('failure description names the paths and caps the list', () => {
 test('the real shipped vendor.lock matches what is on disk right now', async () => {
   // Guards the committed lock itself: if a dependency changes without
   // `npm run vendor:lock`, this fails here rather than at boot in production.
-  const { VENDOR_ROOTS } = await import('../server.js');
+  const { INTEGRITY_ROOTS } = await import('../server.js');
   const { readFileSync } = await import('node:fs');
   const lock = JSON.parse(readFileSync(new URL('../vendor.lock', import.meta.url), 'utf8'));
-  const result = verifyVendorTree(VENDOR_ROOTS, lock);
+  const result = verifyVendorTree(INTEGRITY_ROOTS, lock);
   assert.equal(result.ok, true, `vendor.lock is stale — run npm run vendor:lock\n${describeVendorFailure(result)}`);
+});
+
+test('the lock covers /lib (digidollar-js), not just /vendor — keygen must not ship unverified', async () => {
+  // The lock originally covered only the vendored crypto deps while /lib
+  // (generateMnemonic, BIP32/BIP86 derivation, the RNG health gate) shipped
+  // unverified: an attacker editing /lib/hd.js weakens key generation and the
+  // boot check never notices. Narrowing this back would silently re-open that,
+  // so the coverage itself is asserted.
+  const { INTEGRITY_ROOTS } = await import('../server.js');
+  const { readFileSync } = await import('node:fs');
+  const lock = JSON.parse(readFileSync(new URL('../vendor.lock', import.meta.url), 'utf8'));
+  assert.ok(INTEGRITY_ROOTS['digidollar-js'], 'digidollar-js must be an integrity root');
+  for (const f of ['digidollar-js/hd.js', 'digidollar-js/rng-health.js', 'digidollar-js/txbuild.js']) {
+    assert.ok(lock[f], `${f} must be hashed in vendor.lock`);
+  }
 });

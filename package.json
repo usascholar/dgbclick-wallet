@@ -11,7 +11,8 @@
   "scripts": {
     "start": "npm start --workspace apps/wallet",
     "test": "node --test",
-    "vendor:lock": "npm run vendor:lock --workspace apps/wallet"
+    "vendor:lock": "npm run vendor:lock --workspace apps/wallet",
+    "vendor:verify": "npm run vendor:verify --workspace apps/wallet"
   },
   "engines": {
     "node": ">=18"

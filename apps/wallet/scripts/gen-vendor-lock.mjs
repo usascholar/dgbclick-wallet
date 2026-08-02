@@ -8,11 +8,11 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { VENDOR_ROOTS } from '../server.js';
+import { INTEGRITY_ROOTS } from '../server.js';
 import { hashVendorTree } from '../vendor-integrity.js';
 
 const lockPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'vendor.lock');
-const tree = hashVendorTree(VENDOR_ROOTS);
+const tree = hashVendorTree(INTEGRITY_ROOTS);
 
 writeFileSync(lockPath, JSON.stringify(tree, null, 2) + '\n');
-console.log(`vendor.lock: ${Object.keys(tree).length} files across ${Object.keys(VENDOR_ROOTS).length} packages`);
+console.log(`vendor.lock: ${Object.keys(tree).length} files across ${Object.keys(INTEGRITY_ROOTS).length} trees (/vendor deps + /lib digidollar-js)`);

@@ -5,6 +5,7 @@
 import { mnemonicToSeedSync, generateMnemonic as bip39Generate, validateMnemonic as bip39Validate } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { HDKey } from '@scure/bip32';
+import { assertHealthyRandom } from './rng-health.js';
 import { ddTokenOutputKey } from './taproot.js';
 import { encodeWitnessAddress } from './address.js';
 import { p2wpkhProgramHex } from './txbuild.js';
@@ -18,8 +19,15 @@ export const HD_NETWORKS = Object.freeze({
   regtest: Object.freeze({ hrp: 'dgbrt', coinType: 1 }),
 });
 
-/** Fresh 12-word english mnemonic (128 bits from the platform CSPRNG). */
+/** Fresh 12-word english mnemonic (128 bits from the platform CSPRNG).
+ *
+ * Gated on a runtime CSPRNG health check: vendor locks and code review verify
+ * the FILES, but a swapped-at-runtime `getRandomValues` (the 2026 Coldcard
+ * failure class) is only visible in the OUTPUT. assertHealthyRandom throws
+ * rather than let a broken stream become a wallet — this is the single choke
+ * point every wallet, treasury and gift key is born through. */
 export function generateMnemonic() {
+  assertHealthyRandom();
   return bip39Generate(wordlist, 128);
 }
 

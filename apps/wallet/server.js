@@ -51,6 +51,17 @@ export const VENDOR_ROOTS = Object.fromEntries(
   VENDOR_PACKAGES.map((pkg) => [pkg, dirname(fileURLToPath(import.meta.resolve(pkg)))]),
 );
 
+// Everything the browser EXECUTES, hashed at boot — not just /vendor.
+//
+// The lock originally covered only the vendored crypto deps, while /lib
+// (digidollar-js: generateMnemonic, BIP32/BIP86 derivation, every signing
+// helper) shipped unverified. That inverted the threat model: an attacker who
+// can write to the served tree had no need to touch @noble at all — editing
+// /lib/hd.js weakens key generation directly and the lock never notices. The
+// RNG health gate lives in that same tree, so leaving it unhashed would let
+// the gate itself be stripped silently. Both seams are verified together now.
+export const INTEGRITY_ROOTS = { ...VENDOR_ROOTS, 'digidollar-js': LIB_DIR };
+
 // Fail closed if the /vendor tree is not byte-for-byte what vendor.lock records.
 // Pinned versions (#114) say what npm should install; this says what is actually
 // on disk at boot. Regenerate deliberately with `npm run vendor:lock`.
@@ -61,10 +72,10 @@ function verifyVendorIntegrity() {
   } catch (err) {
     throw new Error(`vendor.lock is missing or unreadable (${err.message}) — run: npm run vendor:lock`);
   }
-  const result = verifyVendorTree(VENDOR_ROOTS, lock);
+  const result = verifyVendorTree(INTEGRITY_ROOTS, lock);
   if (!result.ok) {
     throw new Error(
-      'REFUSING TO START: the /vendor tree does not match vendor.lock.\n' +
+      'REFUSING TO START: the served code tree (/vendor + /lib) does not match vendor.lock.\n' +
       describeVendorFailure(result) +
       '\n  If this change is intentional, re-run: npm run vendor:lock',
     );
