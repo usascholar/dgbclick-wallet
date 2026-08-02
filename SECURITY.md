@@ -26,16 +26,24 @@ triage and a fix can happen before anything is public.
 - Fixes ship to the live sites (wallet.dgbclick.com, beta.dgbclick.com) first;
   this repository receives reviewed release snapshots after.
 
+## Key generation
+
+How keys are generated, what was audited, and how to reproduce that audit on
+your own machine: [docs/entropy-audit.md](docs/entropy-audit.md). Short version:
+128 bits from the platform CSPRNG, no fallback path, and generation refuses
+rather than degrading. Run `node scripts/verify-entropy.mjs` to check the
+checkout in front of you.
+
 ## Scope
 
-In scope — the code in this repository:
+In scope, the code in this repository:
 - the wallet server and browser client (`apps/wallet`),
 - the indexer façade (`apps/indexer`),
 - the protocol library (`packages/digidollar-js`),
 - the faucet (`apps/faucet`).
 
 The DigiByte node, DigiByte Core, ElectrumX, and the DigiDollar consensus
-protocol itself are separate upstream projects — please report issues in those
+protocol itself are separate upstream projects. Please report issues in those
 to their respective maintainers.
 
 ## Good to know
@@ -43,5 +51,5 @@ to their respective maintainers.
 - This is beta software operating on a live network. The UI states this
   plainly; users bear their own risk.
 - The wallet holds no server-side custody of funds and never transmits private
-  keys. Findings that assume otherwise are likely misreadings — but if you can
+  keys. Findings that assume otherwise are likely misreadings, but if you can
   demonstrate key or fund exposure, that is exactly what we want to hear about.

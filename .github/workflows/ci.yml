@@ -9,6 +9,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Weekly, so the npm cross-check (supply-chain job) re-verifies the vendored
+  # crypto even in a quiet week: a dependency can be tampered with long after
+  # the commit that last touched it.
+  schedule:
+    - cron: '17 6 * * 1'
 
 permissions:
   contents: read
@@ -39,6 +44,16 @@ jobs:
       # a pin eroding is a security regression, not a chore.
       - name: pins intact
         run: node scripts/check-pins.mjs
+
+      # Offline stages only (disk-vs-lock, archive-vs-lock, installed-vs-
+      # package-lock): fast, no network, so a PR can never go red because npm
+      # had a bad minute. The archive stage is the one that catches a lock
+      # whose bytes differ from what `git archive` would deploy — that
+      # mismatch does not degrade, it refuses to boot.
+      - name: vendored tree matches the lock (offline)
+        run: npm run vendor:verify
+        env:
+          VENDOR_VERIFY_OFFLINE: '1'
 
       - name: lockfile is in sync with the manifests
         run: |
@@ -76,3 +91,27 @@ jobs:
           for f in /tmp/chrome-ci.log /tmp/wallet-ci.log /tmp/fake-indexer-ci.log; do
             echo "── $f"; tail -40 "$f" 2>/dev/null || echo "(none)"
           done
+
+  # The npm cross-check: re-download each vendored package's PUBLISHED tarball
+  # and compare it against vendor.lock. This is the only stage that catches the
+  # re-lock attack — an edited crypto file plus a regenerated lock passes every
+  # local check, because the lock now describes the tampered bytes. npm's
+  # published bytes are the one thing the attacker cannot rewrite.
+  #
+  # Kept OUT of the PR path deliberately: it needs the network, and a security
+  # check that goes red when npm hiccups is a check people learn to ignore.
+  # Runs where it actually guards production — pushes to main — plus weekly.
+  supply-chain:
+    name: vendored crypto vs published npm
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci
+
+      - name: vendored crypto matches what npm published
+        run: npm run vendor:verify

@@ -314,7 +314,19 @@ test('price history survives a server restart via the persist file', async () =>
     if (sampled.length >= 3) break;
   }
   assert.ok(sampled.length >= 3, 'first server sampled some points');
-  await new Promise((r) => setTimeout(r, 120)); // let the persist write flush
+  // Wait for the FILE, not for a guessed interval. /api/price-history answers
+  // from memory the moment a point is sampled, while the persist write is
+  // async — so a fixed sleep is a bet on how long a disk write takes, and it
+  // loses under full-suite load (this test failed on Linux CI while passing
+  // alone). Poll the actual precondition of the restart below.
+  const { readFileSync: readSync } = await import('node:fs');
+  let onDisk = [];
+  for (let i = 0; i < 100; i++) {
+    try { onDisk = JSON.parse(readSync(dataFile, 'utf8')); } catch { /* not written/complete yet */ }
+    if (Array.isArray(onDisk) && onDisk.length >= 3) break;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.ok(onDisk.length >= 3, `persist file holds the points before restart (got ${onDisk.length})`);
   first.close();
   await once(first, 'close');
 

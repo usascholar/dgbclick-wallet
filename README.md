@@ -170,6 +170,10 @@ Trust should be something you verify, not something you're asked for.
   browser; the servers only ever see data that's already public.
 - **The code here is the code that runs.** This repository is a reviewed snapshot of exactly
   what serves [wallet.dgbclick.com](https://wallet.dgbclick.com).
+- **Key generation is audited, and you can re-run the audit.** 128 bits from the operating
+  system's cryptographic generator, no fallback path, and it refuses to generate rather than
+  fall back to anything weaker. See [How keys are generated](docs/entropy-audit.md), then
+  check this repo yourself with `node scripts/verify-entropy.mjs`.
 - **Tested against the network itself.** Before any fund-moving code ships, its transactions
   must match DigiByte Core's byte-for-byte: proven, not promised.
 - **Audited for hostile conditions** (hostile browsers, dropped connections, malicious
@@ -300,6 +304,13 @@ dual-network deployment names the exact build it runs: `curl -s <domain>/api/con
   container built from a plain `git pull` checkout has neither, and honestly reports
   `v<semver>+dev`; deploy from `git archive` if you want stamped builds.
 - Treat the string as opaque (it is not strict semver build metadata).
+
+## Contributing
+
+Pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: it covers
+the LF line-ending rule (a CRLF commit makes the server refuse to boot), the
+checks to run before opening a PR, and which files need a second reviewer.
+It has a short section for AI agents working in the repo.
 
 ## License
 

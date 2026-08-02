@@ -17,6 +17,12 @@ const SCRIPTHASH = createHash('sha256')
 function fakeElectrum(handlers) {
   const seen = [];
   const server = createTcpServer((sock) => {
+    // A test peer must swallow resets. When a scan trips its budget the indexer
+    // abandons in-flight requests, so this socket dies AFTER the test ended —
+    // and Node turns that stray ECONNRESET into an uncaughtException that fails
+    // the whole FILE even though every assertion passed. That is exactly how
+    // this suite went red on Linux CI while staying green on Windows.
+    sock.on('error', () => {});
     let buf = '';
     sock.on('data', (d) => {
       buf += d;
@@ -430,6 +436,7 @@ test('electrum backend down → 502 with an error body, not a hang', async () =>
 // HTTP seam tests above, minus the façade.
 function lineRpcServer(onMessage) {
   return createTcpServer((sock) => {
+    sock.on('error', () => {}); // same reason as fakeElectrum: no stray reset may fail the file
     let buf = '';
     sock.on('data', (d) => {
       buf += d;

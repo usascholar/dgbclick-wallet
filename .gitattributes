@@ -1,1 +1,9 @@
 apps/wallet/.version-stamp export-subst
+
+# The /lib sources are HASHED into apps/wallet/vendor.lock and the server
+# refuses to boot on any mismatch. Git's per-platform line-ending conversion
+# would make that hash platform-dependent: a lock generated on Windows (CRLF)
+# fails on a Linux CI checkout or container build (LF), turning a security
+# check into a permanently red build or a refused start. Pin them to LF so the
+# bytes are identical on every machine that checks out, archives, or serves.
+packages/digidollar-js/src/*.js text eol=lf
