@@ -19,6 +19,7 @@ import {
 import { createBatchEngine, BatchAbort } from '/treasury-engine.js';
 import { createGitHubBackup } from '/ghbackup.js';
 import { betaCapError } from '/netchrome.js';
+import { readTxCapUsd } from '/txcap.js';
 import { dcaBpsFromMultiplier } from '/dca.js';
 import { MINT_FREEZE_EXPLANATION } from '/dderrors.js';
 
@@ -365,7 +366,7 @@ export function initTreasuryUi(ctx) {
 
   $('sp-next-2').addEventListener('click', () => {
     // the beta cap is per mint tx: the per-treasury DD amount is what matters
-    const capErr = betaCapError(ctx.chainState.netName, wizard.ddAmountEach);
+    const capErr = betaCapError(ctx.chainState.netName, wizard.ddAmountEach, readTxCapUsd());
     if (capErr) { wizardError(2, new Error(`${capErr} — lower the per-treasury amount`)); return; }
     wizard.names = Array.from({ length: wizard.count }, (_, seq) =>
       treasuryName({ ddAmount: wizard.ddAmountEach, unlockDate: wizard.unlockDate, seq }));
@@ -1022,7 +1023,7 @@ export function initTreasuryUi(ctx) {
       // the tweak of the gift key, so the giver can cross-check with them.
       const recipientDDAddress = encodeDDAddress(ddTokenOutputKey(decoded.rawOwnerKeyHex), decoded.network);
       // the beta cap is per mint tx, USD-native — same guard as treasury mints
-      const capErr = betaCapError(ctx.chainState.netName, Number($('gf-dd').value));
+      const capErr = betaCapError(ctx.chainState.netName, Number($('gf-dd').value), readTxCapUsd());
       if (capErr) throw new Error(capErr);
       const { ddCents, tierId, priceMicroUsd, dcaMultiplierBps, collateralSats } = await giftQuote();
       // funding: ONE confirmed P2TR coin of the open wallet covering

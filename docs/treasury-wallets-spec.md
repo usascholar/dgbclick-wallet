@@ -287,9 +287,11 @@ File/line references are to this repo.
    `DD_TX_LIMITS.mainnet = { minMintCents: 10_000, maxMintCents: 10_000_000, minOutputCents: 100 }`
    (`packages/digidollar-js/src/index.js:85-89`): min mint **$100.00**, max **$100,000**,
    min DD output **$1**. The spec's per-treasury floor is therefore also the protocol floor —
-   the wizard must not offer smaller. The beta cap is **$500 per transaction**, mainnet-only,
-   client-side, explicitly **no cumulative/daily tracking**
-   (`apps/wallet/public/netchrome.js:5-8`) — $100–$500 treasuries all clear it, one mint per tx.
+   the wizard must not offer smaller. The beta cap **defaults to $500 per transaction**,
+   mainnet-only, client-side, explicitly **no cumulative/daily tracking**
+   (`apps/wallet/public/netchrome.js`) — $100–$500 treasuries all clear it, one mint per tx.
+   The user may raise that ceiling on their own device (`apps/wallet/public/txcap.js`), so
+   the wizard must read the effective cap rather than assume $500; it still clears either way.
 3. **Single-UTXO funding: YES, both shapes work.** The mint builder emits an owner P2WPKH
    change output only when change exceeds the fold threshold; sub-threshold change is folded
    into the fee rather than emitted as dust (`packages/digidollar-js/src/txbuild.js:6`,

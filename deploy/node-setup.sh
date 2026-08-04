@@ -8,11 +8,10 @@ set -euo pipefail
 VERSION="${VERSION:-9.26.4}"
 RPC_USER="${RPC_USER:?set RPC_USER}"
 RPC_PASS="${RPC_PASS:?set RPC_PASS}"
-# WARNING (#56): 14022 is the MAINNET rpcport. On a host co-located with the
-# mainnet daemon (the dual stack), this default COLLIDES with it — pass an
-# explicit RPC_PORT (e.g. 14026, the v9.26.4 testnet default). The live dual
-# host's testnet daemon does NOT run on 14022; this default predates the dual
-# stack and does not reflect that deployment.
+# WARNING (#56): 14022 is the MAINNET rpcport. On a host co-located with a
+# mainnet daemon (the dual-stack layout in docs/SELF-HOSTING.md), this default
+# COLLIDES with it — pass an explicit RPC_PORT (e.g. 14026, the v9.26.4 testnet
+# default). This default predates dual-stack support and does not suit it.
 RPC_PORT="${RPC_PORT:-14022}" # pinned explicitly below (v9.26.4 testnet default is 14026; 14022 is mainnet's)
 DATADIR="${DATADIR:-/var/lib/digibyte}"
 

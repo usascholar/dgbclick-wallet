@@ -18,6 +18,7 @@ import { networkChrome, betaCapError, backupSkipAllowed } from '/netchrome.js';
 import { dcaBpsFromMultiplier, describeDca } from '/dca.js';
 import { friendlyDDError, MINT_FREEZE_EXPLANATION, isAlreadyBroadcast } from '/dderrors.js';
 import { AUTOLOCK_KEY, AUTOLOCK_DEFAULT_MIN, autolockMinutes } from '/autolock.js';
+import { TXCAP_KEY, txCapUsd, txCapStorageValue, txCapLabel, isRaise, readTxCapUsd } from '/txcap.js';
 import { initGiftKeyHelper } from '/giftkey.js';
 import { createBroadcastLog, txidFromHex } from '/broadcastlog.js';
 import { validateUtxos, validateDdUtxos, validatePositions, validateHistory, validateTxDetail, asIncomplete } from '/validate.js';
@@ -465,7 +466,7 @@ async function loadStatus() {
       if (wallet.seed) { renderAddress(); syncReceiveIndex(); syncExtraChainDepths(); scanStrandedGifts(); }
     }
     // banner + tab title follow the node's chain — same build on every network
-    const { title, banner, level, pill } = networkChrome(info.chain);
+    const { title, banner, level, pill } = networkChrome(info.chain, currentTxCapUsd());
     document.title = title;
     const bannerEl = $('net-banner');
     bannerEl.textContent = banner ?? '';
@@ -1823,6 +1824,81 @@ document.addEventListener('keydown', noteActivity, true);
 $('w-autolock').addEventListener('change', () => {
   try { localStorage.setItem(AUTOLOCK_KEY, $('w-autolock').value); } catch { /* stays a session preference */ }
   armAutolock();
+});
+
+// ---- Per-transaction spend ceiling (txcap.js) ----
+// Read fresh on every use rather than cached: a second tab may have changed it,
+// and a stale cached ceiling is exactly the wrong thing to be holding when the
+// question is "may this transaction proceed".
+const currentTxCapUsd = () => readTxCapUsd();
+
+/** Re-render the banner so it always states the ceiling actually in force. */
+function refreshCapChrome() {
+  const chain = chainState.chain;
+  if (!chain) return;
+  const { banner } = networkChrome(chain, currentTxCapUsd());
+  const bannerEl = $('net-banner');
+  bannerEl.textContent = banner ?? '';
+  bannerEl.hidden = banner === null;
+}
+
+// The select is the REQUEST; the stored value is the decision. They are kept
+// apart on purpose: an unfinished ceremony must leave the ceiling untouched,
+// so the select is snapped back to reality whenever the user backs out.
+let pendingCapChoice = null;
+function renderCapSelect() {
+  $('w-txcap').value = txCapStorageValue(currentTxCapUsd());
+}
+function closeCapCeremony() {
+  $('txcap-modal').classList.remove('open');
+  $('w-txcap-input').value = '';
+  $('w-txcap-go').disabled = true;
+  $('w-txcap-err').textContent = '';
+  pendingCapChoice = null;
+  renderCapSelect(); // abandoning the ceremony must not leave the UI lying
+}
+
+$('w-txcap').addEventListener('change', () => {
+  const current = currentTxCapUsd();
+  const next = txCapUsd($('w-txcap').value);
+  if (!isRaise(current, next)) {
+    // Tightening, or re-picking what is already set: apply immediately. Making
+    // people confirm a SAFER choice just teaches them to click through.
+    try { localStorage.setItem(TXCAP_KEY, txCapStorageValue(next)); } catch { /* session-only */ }
+    renderCapSelect();
+    refreshCapChrome();
+    return;
+  }
+  pendingCapChoice = next;
+  $('w-txcap-new').textContent = txCapLabel(next);
+  $('w-txcap-old').textContent = txCapLabel(current);
+  $('w-txcap-unlimited').style.display = next === null ? 'block' : 'none';
+  $('txcap-modal').classList.add('open');
+  $('w-txcap-input').focus();
+});
+
+const CAP_ACK_PHRASE = 'I ACCEPT THE RISK';
+$('w-txcap-input').addEventListener('input', () => {
+  // Exact phrase, trimmed for stray whitespace but not case-folded: typing it
+  // out is the point of the ceremony.
+  $('w-txcap-go').disabled = $('w-txcap-input').value.trim() !== CAP_ACK_PHRASE;
+});
+$('w-txcap-go').addEventListener('click', () => {
+  if (pendingCapChoice === undefined) return;
+  if ($('w-txcap-input').value.trim() !== CAP_ACK_PHRASE) return; // belt and braces
+  try {
+    localStorage.setItem(TXCAP_KEY, txCapStorageValue(pendingCapChoice));
+  } catch {
+    $('w-txcap-err').textContent = 'This browser refused to store the setting (private mode?). The limit is unchanged.';
+    return;
+  }
+  pendingCapChoice = null;
+  closeCapCeremony();
+  refreshCapChrome();
+});
+$('w-txcap-cancel').addEventListener('click', closeCapCeremony);
+$('txcap-modal').addEventListener('click', (e) => {
+  if (e.target === $('txcap-modal') || e.target.hasAttribute('data-close')) closeCapCeremony();
 });
 
 // ---- Password re-auth (spec §5) ----
@@ -3457,7 +3533,7 @@ $('w-send-review').addEventListener('click', (e) =>
     // treated as "couldn't verify" → warn on the confirm screen, ALLOW the
     // send (decision #6). capUsd is null off-mainnet (the cap is mainnet-only).
     const capUsd = await freshCapUsd(amountSats);
-    const capErr = betaCapError(chainState.netName, capUsd);
+    const capErr = betaCapError(chainState.netName, capUsd, currentTxCapUsd());
     if (capErr) throw new Error(`${capErr} (this send is ≈ ${fmtUSD(capUsd)})`);
     const capUnverified = chainState.netName === 'mainnet' && capUsd == null;
     $('w-send-c-capnote').style.display = capUnverified ? 'block' : 'none';
@@ -3666,7 +3742,7 @@ $('w-mint-review').addEventListener('click', (e) =>
       throw new Error(`this network's consensus maximum is ${fmtC(limits.maxMintCents)} per mint`);
     }
     // $500/tx beta cap (#54) — USD-native, so it applies regardless of the price feed
-    const mintCapErr = betaCapError(chainState.netName, Number(ddCents) / 100);
+    const mintCapErr = betaCapError(chainState.netName, Number(ddCents) / 100, currentTxCapUsd());
     if (mintCapErr) throw new Error(mintCapErr);
     const tierId = $('w-mint-tier').value;
     const tier = LOCK_TIERS.find((t) => t.id === tierId);
@@ -3846,7 +3922,7 @@ $('w-tr-review').addEventListener('click', (e) =>
       throw new Error(`consensus forbids DigiDollar outputs below $${(Number(trLimits.minOutputCents) / 100).toFixed(2)} — send at least that`);
     }
     // $500/tx beta cap (#54) — USD-native, so it applies regardless of the price feed
-    const trCapErr = betaCapError(chainState.netName, Number(cents) / 100);
+    const trCapErr = betaCapError(chainState.netName, Number(cents) / 100, currentTxCapUsd());
     if (trCapErr) throw new Error(trCapErr);
     const ddUtxos = await ddUtxosWithKeys();
     const totalCents = ddUtxos.reduce((s, u) => s + u.ddCents, 0n);
@@ -4004,7 +4080,7 @@ $('w-positions').addEventListener('click', (e) => {
     // $500/tx beta cap (#54). Redemption is all-or-nothing, so an over-cap
     // position (minted outside this wallet) can't shrink to fit — point at
     // Core rather than stranding the funds without an explanation.
-    const rdCapErr = betaCapError(chainState.netName, Number(needCents) / 100);
+    const rdCapErr = betaCapError(chainState.netName, Number(needCents) / 100, currentTxCapUsd());
     if (rdCapErr) {
       throw new Error(`${rdCapErr} — this position redeems $${fmtDD(needCents)} at once; use DigiByte Core to redeem it during the beta`);
     }
@@ -4256,6 +4332,12 @@ async function boot() {
     if (ladder.includes(choice)) $('w-autolock').value = choice;
   } catch { /* private mode → default */ }
   enhanceSelect('w-autolock');
+  // Same discipline for the spend ceiling: show what the GATE will read, not
+  // what the markup happens to mark selected. A select displaying "No limit"
+  // while betaCapError enforces $500 would be a lie in the safer direction,
+  // which is still a lie.
+  renderCapSelect();
+  enhanceSelect('w-txcap');
   loadPriceChart();
   setInterval(loadPriceChart, 60_000);
   try {

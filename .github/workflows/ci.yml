@@ -118,3 +118,79 @@ jobs:
 
       - name: vendored crypto matches what npm published
         run: npm run vendor:verify
+
+  # The consensus paths: mint, send, transfer, redeem, driven against a REAL
+  # DigiByte Core regtest node with ElectrumX and the full service stack.
+  #
+  # This job exists because these drivers previously ran only when a human
+  # remembered. 6b1d78a changed the fee leg on 2026-07-28 and silently
+  # invalidated assertions in four of them; nobody could see it for five days,
+  # and it surfaced only while chasing an unrelated red build. A test nothing
+  # runs is not a test, it is a comment that costs money to maintain.
+  #
+  # Kept OUT of the PR path for the same reason as the supply-chain job above:
+  # it takes ~15 minutes and stands up a node, and a slow check that gates PRs
+  # is a check people learn to route around. It runs where it actually guards
+  # production, on pushes to main, plus weekly.
+  regtest-e2e:
+    name: regtest e2e (consensus paths)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci
+
+      # python3-dev, not just build-essential: plyvel compiles a C++ extension
+      # against the CPython headers, and the only symptom of their absence is
+      # "Python.h: No such file or directory" buried in a pip subprocess.
+      - name: system deps for ElectrumX
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential libleveldb-dev python3-dev
+
+      - name: ElectrumX
+        run: |
+          python3 -m venv "$HOME/ex-venv"
+          "$HOME/ex-venv/bin/pip" install -q --upgrade pip
+          "$HOME/ex-venv/bin/pip" install -q e-x plyvel
+          "$HOME/ex-venv/bin/python" -c 'import plyvel, electrumx; print(electrumx.version)'
+
+      # Pinned AND checksummed. This job downloads a binary that will hold
+      # consensus authority over every assertion below it, so it gets the same
+      # treatment as the vendored crypto: known bytes or no run. Upstream
+      # publishes no SHA256SUMS for this release, so the digest below is of the
+      # exact tarball these drivers were verified against; a silent re-upload
+      # fails the job rather than quietly running different code.
+      - name: DigiByte Core
+        env:
+          DGB_VERSION: 9.26.5
+          DGB_SHA256: 37f6bf6a682f99b5966c2bd3f0cfe3013b60b7b55268958663231ebbf9e56773
+        run: |
+          curl -fsSLo /tmp/dgb.tar.gz \
+            "https://github.com/DigiByte-Core/digibyte/releases/download/v${DGB_VERSION}/digibyte-${DGB_VERSION}-x86_64-linux-gnu.tar.gz"
+          echo "${DGB_SHA256}  /tmp/dgb.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/digibyte"
+          tar -xzf /tmp/dgb.tar.gz -C "$HOME/digibyte" --strip-components=1
+          "$HOME/digibyte/bin/digibyted" -version | head -1
+
+      - name: chrome present
+        run: google-chrome --version
+
+      # Same script humans run (see CONTRIBUTING). One path, one set of
+      # assumptions, so the recipe cannot rot in two places.
+      - name: regtest e2e
+        run: |
+          DGB_BIN="$HOME/digibyte/bin/digibyted" \
+          EX_PYTHON="$HOME/ex-venv/bin/python" \
+            bash scripts/regtest-e2e.sh
+
+      - name: stack logs on failure
+        if: failure()
+        run: |
+          for f in /tmp/dgb-e2e-logs/*.log; do
+            echo "── $f"; tail -40 "$f" 2>/dev/null || true
+          done

@@ -106,19 +106,31 @@ Development happens on Windows; CI and production run Linux. Known differences:
 
 ### Standing up the regtest stack
 
-The regtest drivers (`verify-transfer`, `verify-redeem`, `verify-mint`,
-`verify-send`) need the whole chain: DigiByte Core → ElectrumX → indexer →
-faucet → wallet → headless Chrome. They cannot run in CI, so they are not in
-the default `run-drivers.sh` set and nothing checks them for you. Run them
-before any change to mint, transfer, or redeem.
+Nine drivers exercise a real chain: DigiByte Core → ElectrumX → indexer →
+faucet → wallet → headless Chrome. One command stands the whole thing up and
+runs them:
 
 ```bash
-DGB_BIN=/path/to/digibyted scripts/regtest-stand.sh --keep   # node on :18500
-DAEMON_URL=http://dd:ddpass@127.0.0.1:18500 scripts/electrumx-regtest/run.sh
-PORT=8789 DGB_HRP=dgbrt ELECTRUM_HOST=127.0.0.1 ELECTRUM_PORT=50001 node apps/indexer/server.js
+DGB_BIN=/path/to/digibyted scripts/regtest-e2e.sh
 ```
 
-Four things cost real time to rediscover, so they are written down here:
+CI runs that same script on every push to main (`regtest e2e` job), so this is
+reproducing CI rather than approximating it. Run it yourself before any change
+to mint, transfer, or redeem; `scripts/regtest-e2e.sh verify-redeem` runs one,
+and `REUSE_CHAIN=1` skips the ~651-block rebuild while iterating.
+
+**Do not reuse a chain for a verdict.** Several drivers are only correct on a
+pristine one, and the coupling is invisible when it bites:
+
+- `verify-positions` restores the fixed BIP39 test vector, so repeat runs
+  accumulate funding and redeemed collateral on the same addresses until its
+  `balance < collateral` check flips, with nothing actually wrong.
+- The faucet enforces a 24h per-claimer cooldown, so the first driver to claim
+  starves every later one. `FAUCET_COOLDOWN_HOURS=0` does **not** disable it:
+  the server reads `Number(env) || 24`, so zero falls back to 24 hours. The
+  runner gives each driver its own claims file instead.
+
+Four more things cost real time to rediscover, so they are written down here:
 
 - **`DGB_HRP=dgbrt` is mandatory on regtest.** The indexer defaults to `dgbt`
   (testnet) and hard-rejects any address whose hrp differs. Because money

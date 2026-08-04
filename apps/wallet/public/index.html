@@ -1073,6 +1073,17 @@
             <option value="30">30 minutes</option>
             <option value="0">Never</option>
           </select>
+          <!-- per-transaction spend ceiling (txcap.js): device-scoped like
+               auto-lock. Raising it requires the acknowledgement ceremony
+               below; lowering it never does. -->
+          <label for="w-txcap" style="margin-top:14px">Per-transaction limit (mainnet)</label>
+          <select id="w-txcap">
+            <option value="500" selected>$500 — recommended for beta</option>
+            <option value="2000">$2,000</option>
+            <option value="10000">$10,000</option>
+            <option value="unlimited">No limit</option>
+          </select>
+          <p class="hint" id="w-txcap-hint">A safety ceiling on each transaction, stored on this device only. It applies on mainnet, and it is your own guardrail, not a security feature.</p>
         </div>
       </div>
     </div>
@@ -1084,6 +1095,34 @@
          receive address. Sits AFTER the action modals in the DOM so it stacks
          over the modal whose error offered it (equal z-index → DOM order), but
          BEFORE reauth/mainnet-ack, which must stay on top of everything. -->
+    <!-- Raising the per-transaction limit (txcap.js). Deliberately a ceremony,
+         not a dropdown that silently takes effect: the whole point of the
+         ceiling is that spending past it should be a decision, not a slip.
+         Lowering the limit never opens this. -->
+    <div id="txcap-modal" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-head"><h3>Raise your transaction limit</h3><button class="secondary chip-btn" data-close>Close</button></div>
+        <p class="hint" style="margin-top:0">You are raising this device's per-transaction limit to
+          <strong id="w-txcap-new"></strong> on mainnet, from <strong id="w-txcap-old"></strong>.</p>
+        <p class="hint warn-text" id="w-txcap-unlimited" style="display:none">You have chosen <strong>no limit</strong>. Nothing in this wallet will question the size of a transaction again, including a mistyped amount.</p>
+        <ul class="hint" style="margin:0 0 10px;padding-left:18px">
+          <li>This is <strong>beta software</strong> handling real money. It can have bugs that cost you funds.</li>
+          <li>Your keys are generated and held <strong>in this browser</strong>. Clearing site data, losing the device, or a malicious extension can mean permanent loss.</li>
+          <li>There is <strong>no server-side backup and no recovery</strong>. If you lose your seed phrase, no one, including the developers, can restore your funds.</li>
+          <li><strong>Transactions are irreversible.</strong> A wrong address or amount cannot be undone or refunded.</li>
+          <li>The limit is enforced <strong>in this page only</strong>. It protects you from mistakes, not from an attacker who already controls your browser.</li>
+          <li>You are acting as <strong>your own bank</strong>. The software is provided as-is, without warranty of any kind, and its authors accept <strong>no liability</strong> for any loss.</li>
+        </ul>
+        <label for="w-txcap-input">Type <strong>I ACCEPT THE RISK</strong> to confirm</label>
+        <input id="w-txcap-input" autocomplete="off" />
+        <div class="grid">
+          <button id="w-txcap-go" class="danger" disabled>Raise the limit</button>
+          <button id="w-txcap-cancel" class="secondary" data-close>Cancel</button>
+        </div>
+        <div class="err" id="w-txcap-err"></div>
+      </div>
+    </div>
+
     <div id="consolidate-modal" class="modal-backdrop">
       <div class="modal">
         <div class="modal-head"><h3>Consolidate coins</h3><button class="secondary chip-btn" data-close>Close</button></div>

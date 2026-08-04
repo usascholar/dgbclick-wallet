@@ -9,7 +9,7 @@ apps/*/scripts/*.png
 /v[0-9]*-*.png
 # Session handoff notes (working memory, not documentation).
 HANDOFF.md
-# Belongs to a separate project (api.digiscope.me status service), not this repo.
+# Belongs to a separate status-service project, not this repo.
 deploy/digidollar-status-service.mjs
 deploy/oracle-price-feeder.mjs
 deploy/README-digidollar-status.md
@@ -25,3 +25,6 @@ scripts/recovery-position.json
 # public repo before the pre-publish audit caught it.
 __pycache__/
 *.pyc
+
+# Local editor/agent tooling (preview launch config). Not project config.
+.claude/
