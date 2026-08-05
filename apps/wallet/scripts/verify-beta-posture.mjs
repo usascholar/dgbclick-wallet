@@ -223,6 +223,34 @@ await waitFor(`${text('w-rd-err')}.includes('capped at $500')`, 'over-cap redeem
 const rdErr = await evaluate(text('w-rd-err'));
 check(/DigiByte Core/.test(rdErr), `redeem > $500 blocked, points at Core: "${rdErr.slice(0, 120)}…"`);
 
+// ================= 3b. Raising the cap moves the REAL banner, immediately =================
+// The DOM element, not the pure function. An earlier check called
+// networkChrome() directly and passed while the wired refresh path was dead
+// code reading a property nothing ever set — the banner on screen kept
+// promising a $500 cap the user had just changed, until the next chain poll.
+// So: complete the ceremony, then read #net-banner with NO reload and NO wait
+// for a poll tick.
+const domBanner = () => evaluate(`document.getElementById('net-banner').textContent`);
+await evaluate(`{ const s = document.getElementById('w-txcap'); s.value = '2000'; s.dispatchEvent(new Event('change',{bubbles:true})); }`);
+await waitFor(`document.getElementById('txcap-modal').classList.contains('open')`, 'raise ceremony opens');
+await evaluate(`{ const i = document.getElementById('w-txcap-input'); i.value = 'I ACCEPT THE RISK'; i.dispatchEvent(new Event('input',{bubbles:true})); }`);
+await evaluate(`document.getElementById('w-txcap-go').click()`);
+await waitFor(`!document.getElementById('txcap-modal').classList.contains('open')`, 'ceremony confirmed');
+check(/\$2,000\/tx cap/.test(await domBanner()),
+  `the ON-SCREEN banner reports the raised cap immediately: "${(await domBanner()).slice(-40)}"`);
+check(!/\$500\/tx cap/.test(await domBanner()), 'and no longer promises the $500 it is not enforcing');
+// an over-$500, under-$2,000 send now reviews cleanly — the gate moved with the setting
+await click('act-send');
+await setVal('w-send-to', addr);
+await setVal('w-send-amount', '50000'); // ≈ $671: over the old $500, under the new $2,000
+await click('w-send-review');
+await waitFor(`document.getElementById('w-send-confirm').style.display !== 'none'`, '$671 send reviews under the raised cap');
+check((await evaluate(text('w-send-err'))) === '', 'no cap error at $671 once the cap is $2,000');
+await click('w-send-cancel');
+// tightening back down is immediate, and so is the banner
+await evaluate(`{ const s = document.getElementById('w-txcap'); s.value = '500'; s.dispatchEvent(new Event('change',{bubbles:true})); }`);
+check(/\$500\/tx cap/.test(await domBanner()), 'tightening restores the $500 banner with no reload');
+
 // ================= 4. Decision 6: no price feed → warn-allow on DGB send =================
 oracleDown = true;
 await b.navigate(APP);

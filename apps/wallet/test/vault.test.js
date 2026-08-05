@@ -4,7 +4,7 @@
 // round-trip here exercises exactly what the browser persists.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createVaultManager } from '../public/vault.js';
+import { createVaultManager, newWalletId } from '../public/vault.js';
 import { encryptMnemonic, decryptMnemonic, decryptJson, VaultConflictError } from '../public/keystore.js';
 
 const M1 = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -368,4 +368,58 @@ test('frozen v1 fixture blob decrypts to the raw mnemonic string', async () => {
     },
   };
   assert.equal(await decryptMnemonic(FIXTURE, 'fixture-password-1'), M2);
+});
+
+// --- wallet id shape --------------------------------------------------------
+// The id became the folder name in a shared GitHub backup repo, so uniqueness
+// now has to hold ACROSS devices, not just within one vault. The old scheme was
+// `w${Date.now()}` de-duplicated only against the local vault, so two machines
+// creating a wallet in the same millisecond produced the same id.
+//
+// Tested through newWalletId directly: thousands of draws are what make a
+// uniqueness claim mean anything, and routing each one through createVault
+// would run PBKDF2 600k times to check a string.
+
+test('ids collide only at the birthday bound, not routinely', () => {
+  // 4 random characters over a 32-symbol alphabet is 32^4 = 1,048,576 distinct
+  // suffixes PER MILLISECOND. That is the honest guarantee: two devices that
+  // each create a wallet in the same millisecond collide with probability about
+  // one in a million, not never. This test pins that the suffix is really doing
+  // its job, without pretending the bound is infinite — 20,000 rapid draws
+  // produce a handful of duplicates by the birthday paradox, and demanding zero
+  // would be a test that fails on an unlucky Tuesday.
+  const ids = [];
+  for (let i = 0; i < 20_000; i++) ids.push(newWalletId([]));
+  const duplicates = ids.length - new Set(ids).size;
+  assert.ok(duplicates < 50, `${duplicates} duplicates in 20,000 draws suggests the suffix is not random`);
+});
+
+test('an id is shaped w<epoch-ms><4 random>, and is safe as a repo folder name', () => {
+  for (let i = 0; i < 500; i++) {
+    const id = newWalletId([]);
+    assert.match(id, /^w\d{13}[0-9abcdefghjkmnpqrstvwxyz]{4}$/, `unexpected shape: ${id}`);
+    assert.match(id, /^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'must survive as a GitHub path segment');
+  }
+});
+
+test('the suffix alphabet omits characters that misread in a folder listing', () => {
+  const seen = new Set();
+  for (let i = 0; i < 5_000; i++) for (const ch of newWalletId([]).slice(-4)) seen.add(ch);
+  assert.equal(seen.size, 32, 'all 32 alphabet characters should appear, and no others');
+  for (const ch of ['i', 'l', 'o', 'u']) {
+    assert.equal(seen.has(ch), false, `"${ch}" is too easy to misread and must not appear`);
+  }
+});
+
+test('an id already taken in this vault is never handed out again', () => {
+  const first = newWalletId([]);
+  const second = newWalletId([{ id: first }]);
+  assert.notEqual(second, first);
+});
+
+test('the real vault path uses the suffixed id', async () => {
+  const vm = createVaultManager(memStorage());
+  const id = await vm.createVault(PW, { name: 'Wallet 1', mnemonic: M1 });
+  assert.match(id, /^w\d{13}[0-9abcdefghjkmnpqrstvwxyz]{4}$/);
+  assert.equal(vm.meta().wallets[0].id, id);
 });

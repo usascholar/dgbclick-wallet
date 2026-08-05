@@ -220,6 +220,13 @@ function enhanceSelect(id) {
   });
   document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) { wrap.classList.remove('open'); trig.setAttribute('aria-expanded', 'false'); } });
   sel.addEventListener('change', sync); // keyboard changes on the native select stay in sync
+  // Programmatic .value writes fire NO event, so code that snaps a select back
+  // (e.g. an abandoned cap-raise ceremony) dispatches 'kit-sync' to refresh the
+  // visible label. It cannot dispatch 'change': the setting's own change
+  // handler listens for that, and the pair would recurse. Without this hook the
+  // hidden native select told the truth while the facade the user actually sees
+  // kept showing the choice they had just declined.
+  sel.addEventListener('kit-sync', sync);
   sync();
 }
 
@@ -453,6 +460,7 @@ async function loadStatus() {
   $('s-err').textContent = '';
   try {
     const info = await rpc('getblockchaininfo');
+    chainState.chain = info.chain; // refreshCapChrome re-renders the banner from this
     $('s-chain').textContent = info.chain;
     $('s-height').textContent = Number(info.blocks).toLocaleString('en-US');
     // derive receive addresses for the chain the node is actually on
@@ -562,7 +570,12 @@ $('c-price').addEventListener('input', () => { $('c-price').dataset.touched = '1
 let appConfig = { mock: true, faucet: false, indexer: false };
 // netName is a provisional default until the node names its chain (netKnown);
 // addresses are never rendered from the guess — see renderAddress.
-const chainState = { ddActive: null, netName: 'testnet', netKnown: false };
+// `chain` is the node's OWN spelling ('main'/'test'/'regtest'), kept verbatim
+// because networkChrome switches on exactly that; netName is the wallet-side
+// spelling ('mainnet'/…). refreshCapChrome depends on `chain` being set here —
+// it once read a property nothing assigned, which made it a silent no-op and
+// left the banner promising a $500 cap the user had just removed.
+const chainState = { chain: null, ddActive: null, netName: 'testnet', netKnown: false };
 const wallet = {
   id: null, // active wallet id in the vault (meta.activeId)
   mnemonic: null, // set only while unlocked
@@ -1847,7 +1860,11 @@ function refreshCapChrome() {
 // so the select is snapped back to reality whenever the user backs out.
 let pendingCapChoice = null;
 function renderCapSelect() {
-  $('w-txcap').value = txCapStorageValue(currentTxCapUsd());
+  const sel = $('w-txcap');
+  sel.value = txCapStorageValue(currentTxCapUsd());
+  // 'kit-sync', not 'change': the facade label must follow, but re-entering the
+  // change handler would loop through the ceremony logic
+  sel.dispatchEvent(new Event('kit-sync'));
 }
 function closeCapCeremony() {
   $('txcap-modal').classList.remove('open');
@@ -3535,7 +3552,12 @@ $('w-send-review').addEventListener('click', (e) =>
     const capUsd = await freshCapUsd(amountSats);
     const capErr = betaCapError(chainState.netName, capUsd, currentTxCapUsd());
     if (capErr) throw new Error(`${capErr} (this send is ≈ ${fmtUSD(capUsd)})`);
-    const capUnverified = chainState.netName === 'mainnet' && capUsd == null;
+    // The warning names the ceiling ACTUALLY in force, not the shipped $500 —
+    // and is skipped entirely when the user removed the ceiling, because
+    // "couldn't verify your limit" is meaningless with no limit to verify.
+    const deviceCapUsd2 = currentTxCapUsd();
+    const capUnverified = chainState.netName === 'mainnet' && capUsd == null && deviceCapUsd2 !== null;
+    if (capUnverified) $('w-send-c-capnote').textContent = `Couldn't verify the ${txCapLabel(deviceCapUsd2)} per-transaction limit — no price feed.`;
     $('w-send-c-capnote').style.display = capUnverified ? 'block' : 'none';
     // prefer the fresh cap price for the confirm estimate; fall back to the
     // cached oracle price off-mainnet or when the cap price was unavailable
@@ -4099,15 +4121,31 @@ $('w-positions').addEventListener('click', (e) => {
       if (totalCents < needCents) {
         throw new Error(`you no longer hold enough DigiDollar: redeeming burns $${fmtDD(needCents)}, you hold $${fmtDD(totalCents)} (some was transferred away)`);
       }
-      gather = planGather({
+      // The gather legs live under the SAME per-tx ceiling as every other
+      // transaction — the user's effective device cap, not a hardcoded $500.
+      // When the cap became a setting, every betaCapError call site was
+      // updated but this line kept the old constant, so a raised-cap redeem
+      // passed its own gate and then failed here with an error blaming coin
+      // size — the flow the cap raise exists to unlock, silently still capped.
+      const deviceCapUsd = currentTxCapUsd(); // number, or null for no ceiling
+      const onMainnet = chainState.netName === 'mainnet' || chainState.netName === 'main';
+      const gatherArgs = {
         coins: all.filter((u) => u.address !== p.address),
         shortfallCents: needCents - got,
         minOutputCents: DD_TX_LIMITS[chainState.netName].minOutputCents,
-        capCents: chainState.netName === 'mainnet' || chainState.netName === 'main' ? 50_000n : null, // the same $500 beta cap every tx lives under
+        capCents: onMainnet && deviceCapUsd !== null ? BigInt(deviceCapUsd) * 100n : null,
         targetAddress: p.address,
-      });
+      };
+      gather = planGather(gatherArgs);
       if (!gather) {
-        throw new Error(`your DigiDollar covers the $${fmtDD(needCents)} burn, but it is split into coins too small to move into place automatically — redeem this position with DigiByte Core (redeemdigidollar), which can gather across keys itself`);
+        // Say WHY. Re-planning without the ceiling separates "a coin is over
+        // your per-tx limit" (raise it, or use Core) from "the coins are dust"
+        // (only Core can help) — the old single message blamed coin size in
+        // both cases, telling a capped user the exact opposite of the truth.
+        const cappedOnly = gatherArgs.capCents !== null && planGather({ ...gatherArgs, capCents: null }) !== null;
+        throw new Error(cappedOnly
+          ? `moving your DigiDollar into place needs a transfer above this device's ${txCapLabel(deviceCapUsd)} per-transaction limit — raise the limit in Settings (Network) if you accept the risk, or redeem this position with DigiByte Core (redeemdigidollar)`
+          : `your DigiDollar covers the $${fmtDD(needCents)} burn, but it is split into coins too small to move into place automatically — redeem this position with DigiByte Core (redeemdigidollar), which can gather across keys itself`);
       }
     }
     // The fee leg is the flexible one — the builder signs it with its own key,

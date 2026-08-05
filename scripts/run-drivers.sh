@@ -34,7 +34,11 @@ node --version
 
 # Drivers that stand up everything they need. The rest want a wallet server on
 # 8791 and a fake indexer on 8799 (see each driver's header).
-SELF_CONTAINED=(verify-autolock-default verify-crosswire verify-wallet-mgmt verify-receive-index verify-receive-ui verify-send-amount verify-wallet-switch verify-oracle-refresh)
+# verify-beta-posture joined the default set when it gained the DOM-level
+# banner check for the user-raisable cap: a driver outside this list runs only
+# when a human remembers, which is how every stale-test incident this repo has
+# had got started.
+SELF_CONTAINED=(verify-autolock-default verify-crosswire verify-wallet-mgmt verify-receive-index verify-receive-ui verify-send-amount verify-wallet-switch verify-oracle-refresh verify-beta-posture)
 NEEDS_STACK=(verify-ui verify-receive-compat verify-txcap)
 
 reap() {

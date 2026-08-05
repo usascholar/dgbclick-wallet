@@ -344,6 +344,70 @@ test('price history survives a server restart via the persist file', async () =>
   }
 });
 
+test('the price-history file is never observable half-written', async () => {
+  // The persist write used to be writeFile(), which TRUNCATES before writing.
+  // A reader landing in that window gets a partial file, JSON.parse throws, and
+  // the loader's catch silently starts from an empty series: the user's whole
+  // 24h chart gone with no error anywhere. server.close() clears the sampling
+  // interval but cannot cancel a sample already in flight, so a restarting
+  // process reads exactly while the outgoing one writes — which is how this
+  // surfaced, as "restored from disk: got 0 points" on Linux CI.
+  //
+  // This test only fails if corruption is actually seen, so it cannot flake the
+  // other way: a green run is either correct or unlucky, never wrong.
+  const { createServer } = await import('node:http');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { readFileSync: readSync, unlinkSync, readdirSync } = await import('node:fs');
+  const dataFile = join(tmpdir(), `price-atomic-${process.pid}-${Math.random().toString(36).slice(2)}.json`);
+
+  const node = createServer(async (req, res) => {
+    let raw = '';
+    for await (const c of req) raw += c;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ id: JSON.parse(raw).id, result: { price_micro_usd: 13_420, is_stale: false } }));
+  });
+  await new Promise((r) => node.listen(0, r));
+  const rpc = { url: `http://127.0.0.1:${node.address().port}`, user: 'u', pass: 'p' };
+
+  const server = startServer({ port: 0, rpc, priceHistory: { intervalMs: 1, dataFile } });
+  await once(server, 'listening');
+  try {
+    let reads = 0;
+    for (let i = 0; i < 400; i++) {
+      let text;
+      try { text = readSync(dataFile, 'utf8'); } catch { await new Promise((r) => setTimeout(r, 1)); continue; }
+      reads++;
+      assert.doesNotThrow(() => JSON.parse(text), `read ${i} caught a half-written file: ${text.slice(0, 40)}`);
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    assert.ok(reads > 10, `the sampler should have written something to read (saw ${reads} reads)`);
+
+    // Stray temps are only meaningful once sampling has STOPPED. A temp file
+    // exists by design between writeFile and rename, so checking mid-run just
+    // photographs writes in flight — which is what this assertion did on its
+    // first outing, reporting two perfectly healthy in-progress writes as
+    // leaks. Close first, let anything in flight land, then look.
+    server.close();
+    await once(server, 'close');
+    const stem = dataFile.split(/[\\/]/).pop();
+    let strays = [];
+    for (let i = 0; i < 100; i++) {
+      strays = readdirSync(tmpdir()).filter((f) => f.startsWith(stem) && f.endsWith('.tmp'));
+      if (!strays.length) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.deepEqual(strays, [], 'a finished write must leave no .tmp file beside the real one');
+  } finally {
+    // already closed on the happy path; a second close() on a stopped server
+    // emits ERR_SERVER_NOT_RUNNING, and an unhandled 'error' would take the
+    // whole file down the way a stray ECONNRESET once did
+    if (server.listening) server.close();
+    node.close();
+    try { unlinkSync(dataFile); } catch { /* already gone */ }
+  }
+});
+
 test('price history is a 24h window — older points are pruned', async () => {
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');

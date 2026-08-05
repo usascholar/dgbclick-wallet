@@ -77,11 +77,22 @@ await type(PHRASE);
 check(!(await goDisabled()), 'the exact phrase arms the button');
 
 // ---- abandoning must leave BOTH the ceiling and the UI truthful ----
+// "The UI" means the element the user can SEE. The native select is hidden
+// behind a styled dropdown facade, and an earlier version of this driver only
+// checked the hidden select — which was truthful while the visible label kept
+// showing the declined choice indefinitely. Assert the facade label itself.
+const visibleLabel = () => evaluate(
+  `document.getElementById('w-txcap').parentNode.querySelector('.dd-label').textContent`,
+);
+check((await visibleLabel()).includes('$10,000'),
+  'sanity: picking a raise updates the visible label before the ceremony resolves');
 await evaluate(`document.getElementById('w-txcap-cancel').click()`);
 await waitFor(`!${capOpen()}`, 'cancel closes the ceremony');
 check((await stored()) === null, 'an abandoned ceremony stores nothing');
 check((await selectValue()) === '500',
   'and the select snaps back to the ceiling still in force — no UI claiming a raise that did not happen');
+check((await visibleLabel()).includes('$500'),
+  'the VISIBLE dropdown label snaps back too — the user-facing UI must not keep showing the declined limit');
 
 // ---- completing it applies, and the banner follows ----
 await pick('10000');
@@ -90,6 +101,7 @@ await type(PHRASE);
 await evaluate(`document.getElementById('w-txcap-go').click()`);
 await waitFor(`!${capOpen()}`, 'confirming closes the ceremony');
 check((await stored()) === '10000', 'the accepted ceiling is persisted for this device');
+check((await visibleLabel()).includes('$10,000'), 'the visible label shows the accepted ceiling');
 
 const nc = `(await import('/netchrome.js'))`;
 const tc = `(await import('/txcap.js'))`;

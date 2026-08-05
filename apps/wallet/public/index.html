@@ -832,7 +832,10 @@
               <div class="row"><span class="k">Amount</span><span class="v"><span id="w-send-c-amount"></span> DGB<span id="w-send-c-amount-usd" style="color:var(--muted);font-weight:400"></span></span></div>
               <div class="row"><span class="k">Network fee</span><span class="v"><span id="w-send-c-fee"></span> DGB</span></div>
               <!-- decision #54: DGB send with no price feed is warned, not blocked -->
-              <div class="hint warn-text" id="w-send-c-capnote" style="display:none">Couldn’t verify the $500 beta cap — no price feed.</div>
+              <!-- text is set by app.js with the device's ACTUAL limit; this
+                   static copy is only a fallback and names no figure, because
+                   the cap is user-configurable now -->
+              <div class="hint warn-text" id="w-send-c-capnote" style="display:none">Couldn’t verify the per-transaction limit — no price feed.</div>
               <div class="hint warn-text" id="w-send-c-stale" style="display:none"></div>
               <div class="grid">
                 <button id="w-send-go">Confirm &amp; send</button>
@@ -1442,7 +1445,7 @@
           <ul>
             <li>Beta software, “as is”, no warranty; may contain bugs that lose funds.</li>
             <li>Keys live only in this browser. Back up each wallet's seed phrase (Network → Back up now) — clearing browser data or losing this device without a backup means the funds are gone.</li>
-            <li>During beta, transactions are capped at $500 each.</li>
+            <li>During beta, transactions are capped at $500 each by default. You can raise or remove that limit in Settings (Network), after acknowledging the risks.</li>
             <li>You bear all risk. Authors accept no liability.</li>
           </ul>
         </div>

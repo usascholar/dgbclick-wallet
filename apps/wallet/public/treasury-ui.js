@@ -17,7 +17,7 @@ import {
   ddIntact, collateralHealth, buildReceipt, newBatchId, CARD_STATUSES,
 } from '/treasuries.js';
 import { createBatchEngine, BatchAbort } from '/treasury-engine.js';
-import { createGitHubBackup } from '/ghbackup.js';
+import { createGitHubBackup, pickManifestEntry } from '/ghbackup.js';
 import { betaCapError } from '/netchrome.js';
 import { readTxCapUsd } from '/txcap.js';
 import { dcaBpsFromMultiplier } from '/dca.js';
@@ -798,6 +798,13 @@ export function initTreasuryUi(ctx) {
     if (!pass) return 0;
     statusEl.textContent = 'Encrypting and uploading…';
     await gh.ensureReadme();
+    // Only treasuries whose keystore ACTUALLY uploaded may appear in the
+    // manifest with a fresh backedUpAt. A wallet not on this device is skipped
+    // by the push loop, and stamping it anyway wrote an inventory entry
+    // claiming an upload that never happened — the README tells users this
+    // manifest IS their backup inventory, so a false entry is exactly the lie
+    // that makes someone retire a device believing their keys are safe.
+    const uploaded = [];
     let pushed = 0;
     for (const t of treasuries) {
       let mnemonic;
@@ -808,20 +815,32 @@ export function initTreasuryUi(ctx) {
         mnemonic,
         password: pass,
       });
-      await gh.pushKeystore({ slug: t.slug, keystoreJson: JSON.stringify(envelope, null, 2) });
+      await gh.pushKeystore({ walletId: t.walletId, slug: t.slug, keystoreJson: JSON.stringify(envelope, null, 2) });
+      uploaded.push(t);
       pushed++;
       statusEl.textContent = `Encrypting and uploading… ${pushed}/${treasuries.length}`;
     }
-    await gh.pushManifest({
-      treasuries: treasuries.map((t) => ({
+    // One manifest per wallet, built ONLY from what this run uploaded. A
+    // wallet with nothing uploaded gets no manifest write at all, so the file
+    // the owning device last wrote stays authoritative — this also keeps two
+    // devices from ever writing the same wallet's manifest. Per-wallet skips
+    // are all-or-nothing (getMnemonic fails at the wallet level), so a written
+    // manifest is always that wallet's complete list.
+    const byWallet = new Map();
+    for (const t of uploaded) {
+      if (!byWallet.has(t.walletId)) byWallet.set(t.walletId, []);
+      byWallet.get(t.walletId).push({
         slug: t.slug,
         walletId: t.walletId,
         name: t.name,
         ddAmount: t.mint ? t.mint.ddCents / 100 : null,
         maturity: t.mint?.unlockDateEstimate ?? null,
         backedUpAt: new Date().toISOString(),
-      })),
-    });
+      });
+    }
+    for (const [walletId, entries] of byWallet) {
+      await gh.pushManifest({ walletId, treasuries: entries });
+    }
     statusEl.textContent = `Backed up ${pushed} treasur${pushed === 1 ? 'y' : 'ies'} — encrypted before upload; GitHub only stores scrambled data.`;
     return pushed;
   }
@@ -866,10 +885,15 @@ export function initTreasuryUi(ctx) {
     list.innerHTML = '<div class="hint">Reading the repository…</div>';
     try {
       const files = await gh.listKeystores();
+      // Each row names its wallet folder: the namespaced layout legitimately
+      // holds same-slug treasuries in different wallets, and without the tag
+      // they render as byte-identical rows — ambiguity at device-loss time,
+      // the worst possible moment for it. Legacy flat files say so instead.
       list.innerHTML = files.length
         ? files.map((f) =>
           `<div class="sp-item"><span class="mono">${esc(f.slug)}</span>` +
-          `<button type="button" class="secondary" style="width:auto;margin:0;padding:4px 12px;font-size:12px" data-gh-path="${esc(f.path)}">Restore</button></div>`).join('')
+          `<span class="hint" style="margin-left:8px">${f.walletId ? `wallet …${esc(f.walletId.slice(-6))}` : 'older backup'}</span>` +
+          `<button type="button" class="secondary" style="width:auto;margin:0;padding:4px 12px;font-size:12px" data-gh-path="${esc(f.path)}" data-gh-wallet="${esc(f.walletId ?? '')}">Restore</button></div>`).join('')
         : '<div class="hint">No wallet backups in this repository yet.</div>';
     } catch (e) {
       list.innerHTML = '';
@@ -902,8 +926,10 @@ export function initTreasuryUi(ctx) {
         }
         if (!validateMnemonic(mnemonic)) throw new Error('the file decrypted, but it does not hold a valid seed phrase');
         const { id } = await ctx.createWalletEntry({ name: envelope.name, mnemonic, backedUp: false, masterPass });
-        // restore treasury metadata from the manifest when it names this slug
-        await restoreTreasuryMeta(id, envelope.name);
+        // restore treasury metadata from the manifest — scoped to the wallet
+        // folder this FILE came from, so a same-named treasury in another
+        // wallet cannot lend it the wrong amounts
+        await restoreTreasuryMeta(id, envelope.name, btn.dataset.ghWallet || null);
         ctx.switchToWallet(id);
         $('gh-modal').classList.remove('open');
       } catch (err) {
@@ -914,10 +940,14 @@ export function initTreasuryUi(ctx) {
     })());
 
   /** After a GitHub restore, recover the treasury card from the manifest. */
-  async function restoreTreasuryMeta(walletId, name) {
+  async function restoreTreasuryMeta(walletId, name, sourceWalletId = null) {
     try {
-      const manifest = JSON.parse(await gh.pullKeystore('manifest.json'));
-      const entry = (manifest.treasuries ?? []).find((x) => x.name === name);
+      // every wallet's manifest, plus a legacy manifest.json if one survives.
+      // pickManifestEntry scopes the match to the wallet folder the restored
+      // FILE came from — matching by display name across all wallets attached
+      // another wallet's DD amount and unlock date when names collided.
+      const manifest = await gh.readManifest();
+      const entry = pickManifestEntry(manifest.treasuries, { name, sourceWalletId });
       if (!entry) return;
       registry.putTreasury({
         walletId,

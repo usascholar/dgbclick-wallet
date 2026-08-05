@@ -4,7 +4,7 @@
 // so the UI is usable before you have a testnet node running.
 
 import { createServer } from 'node:http';
-import { readFile, writeFile, stat, mkdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, stat, mkdir, rename, unlink } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -403,6 +403,7 @@ function syntheticPriceSeries(nowSec = Math.floor(Date.now() / 1000)) {
 // survives restarts. Stops with the server.
 function startPriceSampler({ rpc, intervalMs = 60_000, dataFile = '', windowSec = 24 * 3600, guard = null }, server) {
   let series = [];
+  let writeSeq = 0; // makes each persist write's temp file its own
   const cutoff = () => Math.floor(Date.now() / 1000) - windowSec;
   if (dataFile) {
     try {
@@ -428,8 +429,28 @@ function startPriceSampler({ rpc, intervalMs = 60_000, dataFile = '', windowSec 
     }
     while (series.length && series[0].t <= cutoff()) series.shift();
     if (dataFile) {
+      // Write-then-rename, because a plain writeFile TRUNCATES before it
+      // writes: anyone reading in that window gets a partial file, JSON.parse
+      // throws, and the loader's catch silently starts from an empty series —
+      // a user's whole 24h chart gone, with no error anywhere. The window is
+      // real: server.close() clears the interval but cannot cancel a sample
+      // already in flight, so a restarting process reads while the outgoing one
+      // is still writing. rename() is atomic, so a reader sees the previous
+      // complete file or the new one, never half of either.
+      // The temp name is unique PER WRITE, not per process. Sampling is async,
+      // so two samples can overlap; sharing one temp path means the second
+      // truncates it while the first is mid-write, and the first's rename then
+      // publishes a partial file — reintroducing the exact corruption this
+      // replaced. Caught by the concurrent-read test, which samples every 1ms.
       try {
-        await writeFile(dataFile, JSON.stringify(series));
+        const tmp = `${dataFile}.${process.pid}.${++writeSeq}.tmp`;
+        try {
+          await writeFile(tmp, JSON.stringify(series));
+          await rename(tmp, dataFile);
+        } catch (err) {
+          await unlink(tmp).catch(() => {}); // never leave a stray temp behind
+          throw err;
+        }
       } catch {
         // read-only disk: chart still works from memory
       }

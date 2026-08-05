@@ -17,11 +17,39 @@ import {
 const normMnemonic = (m) => String(m ?? '').trim().toLowerCase().split(/\s+/).join(' ');
 
 // Wallet ids are 'w<epoch-ish counter>' — never reused, bumped past collisions.
-function newWalletId(wallets) {
+// 32 characters, so a random byte masked to 5 bits picks one with NO modulo
+// bias. Crockford-style: no i/l/o/u, which keeps an id readable aloud and
+// unmistakable in a folder listing.
+const ID_ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
+
+/** Four random characters: 32^4 ≈ 1.05 million per millisecond. */
+function idSuffix() {
+  const bytes = new Uint8Array(4);
+  globalThis.crypto.getRandomValues(bytes);
+  let out = '';
+  for (const b of bytes) out += ID_ALPHABET[b & 31];
+  return out;
+}
+
+/** A wallet id, e.g. w1754161234567k3xq.
+ *
+ * The timestamp keeps ids roughly sortable and human-readable. The random
+ * suffix is what makes them unique ACROSS DEVICES, which the counter never
+ * did: it only de-duplicated within one vault, so two wallets created on two
+ * machines in the same millisecond got the same id. That was harmless while an
+ * id was local, and stopped being harmless when it became the folder name in a
+ * GitHub backup repo that several wallets share — a collision there would put
+ * two different wallets' encrypted keystores in one folder.
+ *
+ * Existing ids are left exactly as they are; only new wallets get a suffix. */
+// Exported for its own tests: proving uniqueness needs thousands of draws, and
+// going through createVault would run PBKDF2 600k times to test a string.
+export function newWalletId(wallets) {
   const taken = new Set(wallets.map((w) => w.id));
-  let n = Date.now();
-  while (taken.has(`w${n}`)) n += 1;
-  return `w${n}`;
+  for (;;) {
+    const id = `w${Date.now()}${idSuffix()}`;
+    if (!taken.has(id)) return id; // same-vault guard kept: cheap, and belt-and-braces
+  }
 }
 
 /** Create a vault manager over the given storage (keystore.js in the browser). */

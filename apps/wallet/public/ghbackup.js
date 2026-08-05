@@ -42,14 +42,19 @@ created by the DGBclick Wallet browser wallet.
   the browser BEFORE it was uploaded. GitHub only ever stores scrambled data.
 - Without the wallet password these files are useless — no keys, seeds or
   passwords exist in this repository in readable form.
-- \`manifest.json\` is an inventory only (names, amounts, unlock dates).
+- Files are grouped by wallet: \`wallets/<wallet-id>/<name>.keystore.json\`.
+  Several wallets can safely back up to this one repository, because each
+  writes only inside its own folder and never touches another's files.
+- \`manifests/<wallet-id>.json\` is an inventory only (names, amounts, unlock
+  dates). One per wallet, so two wallets syncing at the same time cannot
+  overwrite each other's list.
 
 ## How to restore
 
 1. Open https://wallet.dgbclick.com in your browser.
 2. Choose "Get started" → "Restore from backup file".
-3. Pick a \`.keystore.json\` file from the \`wallets/\` folder here and enter
-   the wallet password you used when that treasury was created.
+3. Pick a \`.keystore.json\` file from any wallet folder under \`wallets/\`
+   here and enter the wallet password you used when that treasury was created.
 
 ## KEEP THIS REPOSITORY PRIVATE
 
@@ -89,6 +94,38 @@ function assertNoSecrets(node, trail = 'manifest') {
     }
     assertNoSecrets(value, `${trail}.${field}`);
   }
+}
+
+// A wallet id becomes a path segment in a URL we PUT to, so it is validated
+// rather than trusted: no slash, no dot, nothing that could climb out of the
+// folder and overwrite README.md, another wallet's keystore, or a manifest.
+// Vault ids are of the form w<epoch-ms>, which passes; anything else is a bug
+// or an attack, and both should stop here.
+function assertPathSegment(value, label) {
+  const text = String(value ?? '');
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(text)) {
+    throw new Error(`the ${label} is not usable as a folder name — letters, numbers, hyphens and underscores only`);
+  }
+  return text;
+}
+
+/** Pick the manifest entry for a restored keystore.
+ *
+ * `sourceWalletId` is the wallet folder the file was pulled from. It is the
+ * disambiguator: several wallets legitimately hold same-NAMED treasuries in a
+ * shared repo, and matching by name alone can attach another wallet's DD
+ * amount and unlock date to the restored card — wrong-money metadata that then
+ * propagates into future backups. A namespaced file therefore matches ONLY
+ * within its own wallet's entries, and returns null rather than falling back
+ * to a name match: no metadata is strictly better than another wallet's.
+ * Legacy flat files (sourceWalletId null) predate namespacing and have only
+ * the name to go on. */
+export function pickManifestEntry(treasuries, { name, sourceWalletId } = {}) {
+  const entries = Array.isArray(treasuries) ? treasuries : [];
+  if (sourceWalletId) {
+    return entries.find((x) => x?.walletId === sourceWalletId && x?.name === name) ?? null;
+  }
+  return entries.find((x) => x?.name === name) ?? null;
 }
 
 export function createGitHubBackup({
@@ -221,35 +258,94 @@ export function createGitHubBackup({
       return { path: 'README.md', created: true };
     },
 
-    async pushKeystore({ slug, keystoreJson, message } = {}) {
+    // walletId is REQUIRED, and deliberately not optional-with-a-flat-fallback:
+    // the flat layout is exactly the collision this namespacing exists to stop,
+    // so a caller that forgets must fail loudly rather than quietly write to the
+    // shared path.
+    async pushKeystore({ walletId, slug, keystoreJson, message } = {}) {
+      const wid = assertPathSegment(walletId, 'wallet id');
       if (typeof slug !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
         throw new Error('that file name is not usable — use lowercase letters, numbers and hyphens only');
       }
-      const path = `wallets/${slug}${KEYSTORE_SUFFIX}`;
+      const path = `wallets/${wid}/${slug}${KEYSTORE_SUFFIX}`;
       return putFile(path, String(keystoreJson),
         message ?? `Backup ${slug} (${new Date().toISOString().slice(0, 10)})`);
     },
 
-    async pushManifest({ treasuries } = {}) {
-      const manifest = { v: 1, updatedAt: new Date().toISOString(), treasuries };
+    // One manifest FILE PER WALLET, not one shared file that every wallet
+    // rewrites. Merging into a shared manifest.json is read-modify-write, and
+    // with several wallets syncing to the same repo at once the later writer
+    // silently drops the earlier one's entries — the classic lost update.
+    // putFile retries a 409 exactly once by design, which settles an accidental
+    // race but is not a concurrency strategy. Giving each wallet its own path
+    // removes the race instead of narrowing it: no two writers, nothing to lose.
+    async pushManifest({ walletId, treasuries } = {}) {
+      const wid = assertPathSegment(walletId, 'wallet id');
+      const manifest = { v: 2, walletId: wid, updatedAt: new Date().toISOString(), treasuries };
       // no-plaintext guard rail: metadata only, ever — see assertNoSecrets
       assertNoSecrets(manifest);
-      const { path } = await putFile('manifest.json', JSON.stringify(manifest, null, 2),
-        `Update manifest (${new Date().toISOString().slice(0, 10)})`);
+      const { path } = await putFile(`manifests/${wid}.json`, JSON.stringify(manifest, null, 2),
+        `Update manifest for ${wid} (${new Date().toISOString().slice(0, 10)})`);
       return { path };
     },
 
+    /** Every treasury entry across every wallet's manifest, plus the legacy
+     * single manifest.json when an older backup left one behind. Read-only, so
+     * a repo written by an older build stays fully restorable. */
+    async readManifest() {
+      const creds = requireCreds();
+      const base = `/repos/${creds.owner}/${creds.repo}`;
+      const treasuries = [];
+      const absorb = async (path) => {
+        const res = await request(creds, 'GET', `${base}/contents/${path}`);
+        if (res.status === 404) return;
+        if (res.status !== 200) throw statusError(res.status);
+        const body = await readJson(res);
+        if (typeof body?.content !== 'string') return;
+        try {
+          const parsed = JSON.parse(base64ToUtf8(body.content));
+          if (Array.isArray(parsed?.treasuries)) treasuries.push(...parsed.treasuries);
+        } catch { /* a hand-edited or truncated manifest must not break a restore */ }
+      };
+      const dir = await request(creds, 'GET', `${base}/contents/manifests`);
+      if (dir.status === 200) {
+        const entries = await readJson(dir);
+        for (const f of Array.isArray(entries) ? entries : []) {
+          if (f?.type === 'file' && typeof f.name === 'string' && f.name.endsWith('.json')) {
+            await absorb(f.path);
+          }
+        }
+      } else if (dir.status !== 404) {
+        throw statusError(dir.status);
+      }
+      await absorb('manifest.json'); // legacy layout
+      return { treasuries };
+    },
+
+    /** Keystores from every wallet folder, plus any left at the old flat path.
+     * Legacy entries report walletId:null — they predate namespacing and their
+     * slug alone is what identified them. */
     async listKeystores() {
       const creds = requireCreds();
       const base = `/repos/${creds.owner}/${creds.repo}`;
-      const res = await request(creds, 'GET', `${base}/contents/wallets`);
-      if (res.status === 404) return []; // first sync — the folder does not exist yet
-      if (res.status !== 200) throw statusError(res.status);
-      const body = await readJson(res);
-      if (!Array.isArray(body)) return [];
-      return body
-        .filter((f) => f?.type === 'file' && typeof f.name === 'string' && f.name.endsWith(KEYSTORE_SUFFIX))
-        .map((f) => ({ slug: f.name.slice(0, -KEYSTORE_SUFFIX.length), path: f.path, sha: f.sha }));
+      const readDir = async (path) => {
+        const res = await request(creds, 'GET', `${base}/contents/${path}`);
+        if (res.status === 404) return []; // first sync — the folder does not exist yet
+        if (res.status !== 200) throw statusError(res.status);
+        const body = await readJson(res);
+        return Array.isArray(body) ? body : [];
+      };
+      const isKeystore = (f) => f?.type === 'file' && typeof f.name === 'string' && f.name.endsWith(KEYSTORE_SUFFIX);
+      const entry = (f, walletId) => ({ slug: f.name.slice(0, -KEYSTORE_SUFFIX.length), walletId, path: f.path, sha: f.sha });
+
+      const top = await readDir('wallets');
+      const out = top.filter(isKeystore).map((f) => entry(f, null)); // legacy flat files
+      for (const d of top) {
+        if (d?.type !== 'dir' || typeof d.name !== 'string') continue;
+        const inner = await readDir(`wallets/${d.name}`);
+        out.push(...inner.filter(isKeystore).map((f) => entry(f, d.name)));
+      }
+      return out;
     },
 
     async pullKeystore(path) {
